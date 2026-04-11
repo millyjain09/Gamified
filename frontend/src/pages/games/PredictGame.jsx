@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Flame, Scissors, Zap, Shield, ArrowLeft, Skull, CheckCircle2 } from 'lucide-react';
+import axios from 'axios';
 
 const PredictGame = () => {
   const navigate = useNavigate();
+
+  // ---> GET LOGGED IN USER DATA <---
+  const [userData, setUserData] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
 
   // --- GAME STATE ---
   const [hp, setHp] = useState(100);
@@ -12,6 +16,9 @@ const PredictGame = () => {
   const [qIndex, setQIndex] = useState(1);
   const [status, setStatus] = useState('playing'); 
   const [lastAction, setLastAction] = useState(null); 
+  
+  // ---> NEW: TRACK COINS EARNED IN CURRENT SESSION <---
+  const [sessionCoins, setSessionCoins] = useState(0);
 
   // --- EXPANDED QUESTIONS ---
   const questions = [
@@ -88,7 +95,7 @@ const PredictGame = () => {
       options: [
         { id: 'A', text: 'Preorder', color: 'bg-red-500/20 border-red-500', isCorrect: false },
         { id: 'B', text: 'Inorder', color: 'bg-blue-500/20 border-blue-500', isCorrect: true },
-        { id: 'C', text: 'Postorder', color: 'bg-green-500/20 border-green-500', is: false },
+        { id: 'C', text: 'Postorder', color: 'bg-green-500/20 border-green-500', isCorrect: false }, 
         { id: 'D', text: 'Level-order', color: 'bg-yellow-500/20 border-yellow-500', isCorrect: false }
       ]
     },
@@ -149,6 +156,26 @@ const PredictGame = () => {
       setLastAction('success');
       setXp(prev => prev + 50);
       setTemperature(prev => Math.max(30, prev - 20));
+
+      // ---> DATABASE & SESSION COIN UPDATE LOGIC <---
+      const coinsEarned = 20; 
+      setSessionCoins(prev => prev + coinsEarned); // Tracking for Evacuate screen
+
+      if (userData && userData.id) {
+        const newCoins = (userData.coins || 0) + coinsEarned;
+        const updatedUser = { ...userData, coins: newCoins };
+
+        axios.post('http://localhost:5000/api/auth/update-stats', {
+          userId: userData.id,
+          coins: newCoins,
+          activeAvatarId: userData.activeAvatarId,
+          unlockedAvatars: userData.unlockedAvatars
+        }).then(() => {
+          setUserData(updatedUser);
+          localStorage.setItem('user', JSON.stringify(updatedUser)); 
+        }).catch(err => console.error("Coin update failed", err));
+      }
+      // ------------------------------------------
       
       setTimeout(() => {
         moveToNextQuestion();
@@ -184,7 +211,13 @@ const PredictGame = () => {
       <div className="min-h-screen bg-red-950 flex flex-col items-center justify-center text-center p-6">
         <Flame className="w-32 h-32 text-orange-500 mb-6 animate-bounce" />
         <h1 className="text-6xl font-black italic uppercase text-white mb-4">Core Meltdown</h1>
-        <p className="text-red-300 font-mono text-xl mb-8">System destroyed. You cut the wrong wire or ran out of time.</p>
+        <p className="text-red-300 font-mono text-xl mb-4">System destroyed. You cut the wrong wire or ran out of time.</p>
+        
+        {/* ---> UPDATED: SHOW COINS EARNED <--- */}
+        <div className="bg-black/40 border border-red-500/30 px-6 py-3 rounded-xl mb-8">
+           <span className="text-yellow-400 font-bold text-lg tracking-wider">COINS SALVAGED: {sessionCoins} 🪙</span>
+        </div>
+
         <button onClick={() => navigate('/dsa-missions')} className="px-8 py-3 bg-red-800 border border-red-400 text-white font-bold uppercase tracking-wider rounded hover:bg-red-700 transition-colors">Evacuate</button>
       </div>
     );
@@ -195,8 +228,14 @@ const PredictGame = () => {
       <div className="min-h-screen bg-[#0a0f16] flex flex-col items-center justify-center text-center p-6">
         <CheckCircle2 className="w-24 h-24 text-cyan-500 mb-6" />
         <h1 className="text-5xl font-black italic uppercase text-cyan-400 mb-4">Systems Stabilized</h1>
-        <p className="text-slate-400 font-mono mb-8">You successfully dry-ran the sequences. Total XP Earned: {xp}</p>
-        <button onClick={() => navigate('/dsa-missions')} className="px-8 py-3 bg-cyan-900/50 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider rounded hover:bg-cyan-900 transition-colors">Claim XP & Exit</button>
+        <p className="text-slate-400 font-mono mb-4">You successfully dry-ran the sequences. Total XP Earned: {xp}</p>
+        
+        {/* ---> UPDATED: SHOW COINS EARNED <--- */}
+        <div className="bg-cyan-950/40 border border-cyan-500/30 px-6 py-3 rounded-xl mb-8">
+           <span className="text-yellow-400 font-bold text-lg tracking-wider">TOTAL COINS EARNED: {sessionCoins} 🪙</span>
+        </div>
+
+        <button onClick={() => navigate('/dsa-missions')} className="px-8 py-3 bg-cyan-900/50 border border-cyan-500 text-cyan-400 font-bold uppercase tracking-wider rounded hover:bg-cyan-900 transition-colors">Claim Rewards & Exit</button>
       </div>
     );
   }

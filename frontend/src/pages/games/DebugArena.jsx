@@ -1,12 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Terminal, Shield, Clock, Zap, AlertTriangle, ArrowLeft, CheckCircle2, Skull } from 'lucide-react';
-import axios from 'axios';
+
+// --- MOCK DATABASE (NO BACKEND NEEDED) ---
+const MOCK_DATABASE = {
+  1: [
+    { brief: "The variable declaration is missing a terminal semicolon.", buggyCode: "let systemStatus = 'active'\nlet power = 100;", expectedFix: ";" },
+    { brief: "This function should ADD two numbers, but it subtracts them.", buggyCode: "function addPower(a, b) {\n  return a - b;\n}", expectedFix: "a+b" },
+    { brief: "Fix the array index to access the FIRST element.", buggyCode: "const nodes = ['Alpha', 'Beta', 'Gamma'];\nlet firstNode = nodes[1];", expectedFix: "nodes[0]" },
+    { brief: "Correct the equality check. It should check if status is true.", buggyCode: "if (status = true) {\n  console.log('Online');\n}", expectedFix: "status===true" },
+    { brief: "Return the correct boolean value for success.", buggyCode: "function isReady() {\n  return 'true';\n}", expectedFix: "returntrue" }
+  ],
+  2: [
+    { brief: "The loop is causing an infinite assignment. Fix the equality condition.", buggyCode: "for(let i=0; i<5; i++) {\n  if(i = 3) break;\n}", expectedFix: "i===3" },
+    { brief: "The string template literal is broken. Use backticks.", buggyCode: "const user = 'Neo';\nconst greet = 'Wake up, ${user}';", expectedFix: "`Wakeup,${user}`" },
+    { brief: "Convert this string to an integer properly.", buggyCode: "let level = '2';\nlet nextLevel = parseInt(level) + 1.5;", expectedFix: "parseInt(level)+1" }
+  ],
+  3: [
+    { brief: "Filter out only the EVEN numbers.", buggyCode: "const evens = nums.filter(n => n % 2 !== 0);", expectedFix: "n%2===0" },
+    { brief: "Check if the array includes the target virus.", buggyCode: "const found = system.contains('virus');", expectedFix: "system.includes('virus')" },
+    { brief: "Fix the object property access.", buggyCode: "const user = { name: 'Admin' };\nconsole.log(user[name]);", expectedFix: "user.name" }
+  ],
+  4: [
+    { brief: "React state mutation is direct. Fix it.", buggyCode: "const [hp, setHp] = useState(100);\nhp = hp - 10;", expectedFix: "setHp(hp-10)" },
+    { brief: "Fix the missing await in the async fetch.", buggyCode: "async function getData() {\n  const res = fetch('/api/data');\n}", expectedFix: "awaitfetch" }
+  ],
+  5: [
+    { brief: "Fix the recursive Fibonacci base case to stop infinite loops.", buggyCode: "function fib(n) {\n  if (n === 0) return 1;\n  return fib(n-1) + fib(n-2);\n}", expectedFix: "if(n<=1)returnn" }
+  ]
+};
 
 const DebugArena = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const levelId = location.state?.levelId || 1;
+
+  // Current logged in user
+  const [userData, setUserData] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
 
   const levelConfigs = {
     1: { title: "Level 1: Beginner", time: 60, totalQs: 5, color: "text-green-500", border: "border-green-500" },
@@ -26,34 +56,29 @@ const DebugArena = () => {
   const [feedback, setFeedback] = useState("Initializing System...");
   
   const [currentQuestion, setCurrentQuestion] = useState({
-      brief: "Awaiting data from Gemini Engine...",
+      brief: "Loading module...",
       buggyCode: "",
       expectedFix: ""
   });
   const [userCode, setUserCode] = useState("");
 
-  // --- FETCH DYNAMIC QUESTION FROM BACKEND ---
-  const fetchNextQuestion = async () => {
+  // --- FETCH QUESTION FROM LOCAL DB ---
+  const fetchNextQuestion = () => {
     setStatus('loading');
-    setFeedback("Connecting to Gemini AI for next anomaly...");
+    setFeedback("Extracting anomaly from local database...");
     
-    try {
-      const response = await axios.post('http://localhost:5000/api/games/debug/generate', {
-          levelId: levelId
-      });
+    // Fake a small delay for the "hacker" feel
+    setTimeout(() => {
+      const levelQuestions = MOCK_DATABASE[levelId] || MOCK_DATABASE[1];
+      // Using modulo so if there are fewer questions than config.totalQs, it repeats safely
+      const nextQ = levelQuestions[(qIndex - 1) % levelQuestions.length];
       
-      const nextQ = response.data;
       setCurrentQuestion(nextQ);
       setUserCode(nextQ.buggyCode);
       setTimeLeft(config.time);
       setStatus('playing');
       setFeedback("System ready. Waiting for compilation...");
-
-    } catch (error) {
-      console.error("Failed to fetch question:", error);
-      setStatus('error');
-      setFeedback("API ERROR: Failed to generate question. Please check backend connection.");
-    }
+    }, 800);
   };
 
   useEffect(() => {
@@ -77,10 +102,8 @@ const DebugArena = () => {
     return () => clearInterval(timer);
   }, [status, timeLeft]);
 
-  // 🚀 NAYA FUNCTION: LEVEL UNLOCK KARNE KE LIYE
   const unlockNextLevel = () => {
     const currentHighest = parseInt(localStorage.getItem('debugHighestLevel')) || 1;
-    // Agar current level se agla level badha hai, aur max 5 level hain
     if (levelId + 1 > currentHighest && levelId < 5) {
       localStorage.setItem('debugHighestLevel', levelId + 1);
     }
@@ -101,7 +124,7 @@ const DebugArena = () => {
         if (qIndex < config.totalQs) {
           setQIndex(prev => prev + 1);
         } else {
-          unlockNextLevel(); // 🚀 Call unlock logic here
+          unlockNextLevel(); 
           setStatus('completed');
           setFeedback(`MISSION ACCOMPLISHED! Level ${levelId} Cleared.`);
         }
@@ -135,14 +158,26 @@ const DebugArena = () => {
 
     if (isCorrect) {
       setPw(prev => prev + 50); 
+      
+      // 🚀 COIN LOGIC: Level * 10 
+      const coinsEarned = levelId * 10;
+      
+      // LocalStorage & UI Update (No backend needed for the game to work, but we save coins locally)
+      if (userData) {
+        const newCoins = (userData.coins || 0) + coinsEarned;
+        const updatedUser = { ...userData, coins: newCoins };
+        setUserData(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser)); // Taki Dashboard update ho jaye
+      }
+      
       setStatus('success');
-      setFeedback(`SUCCESS: Bug eradicated! +50 PW (Fix verified)`);
+      setFeedback(`SUCCESS: Bug eradicated! +50 PW & +${coinsEarned} Coins (Fix verified)`);
       
       setTimeout(() => {
         if (qIndex < config.totalQs) {
           setQIndex(prev => prev + 1);
         } else {
-          unlockNextLevel(); // 🚀 Call unlock logic here
+          unlockNextLevel();
           setStatus('completed');
           setFeedback(`MISSION ACCOMPLISHED! Level ${levelId} Cleared.`);
         }
@@ -161,7 +196,7 @@ const DebugArena = () => {
           if (qIndex < config.totalQs) {
             setQIndex(prev => prev + 1);
           } else {
-            unlockNextLevel(); // 🚀 Call unlock logic here
+            unlockNextLevel(); 
             setStatus('completed');
             setFeedback(`MISSION ACCOMPLISHED! Level ${levelId} Cleared.`);
           }
@@ -289,7 +324,7 @@ const DebugArena = () => {
                 : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
             }`}
           >
-            {status === 'loading' ? 'Loading AI Model...' : status === 'success' ? 'Fix Applied' : status === 'error' ? 'Analyzing...' : <><Terminal className="w-5 h-5"/> Compile & Execute</>}
+            {status === 'loading' ? 'Loading Local Data...' : status === 'success' ? 'Fix Applied' : status === 'error' ? 'Analyzing...' : <><Terminal className="w-5 h-5"/> Compile & Execute</>}
           </button>
         </div>
 

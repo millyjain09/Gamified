@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Editor from "@monaco-editor/react";
+import axios from "axios"; 
+import { io } from "socket.io-client";
 
 const LANGUAGES = [
   { id: "javascript", label: "JS",   monaco: "javascript", judge0Id: 63  },
@@ -9,9 +11,9 @@ const LANGUAGES = [
 ];
 
 const JUDGE0_URL = "https://ce.judge0.com";
-
 const ROUND_TIME = 5 * 60;
 const ROUNDS = ["easy", "medium", "hard"];
+const socket = io("http://localhost:5000");
 
 const QUESTIONS = {
   easy: [
@@ -301,13 +303,11 @@ const QUESTIONS = {
 };
 
 /* ─── CODE RUNNER ────────────────────────────────────────────── */
-// JS runs locally; Python/Java/C++ go through Judge0
 function runCodeJS(code, question) {
   const results = [];
   let allPassed = true;
   for (const tc of question.testCases) {
     try {
-      // eslint-disable-next-line no-new-func
       const out = new Function(code + "\n" + question.call(tc.input))();
       const passed = question.validate(out, tc.expected);
       if (!passed) allPassed = false;
@@ -334,7 +334,7 @@ async function submitToJudge0(sourceCode, languageId, stdin) {
     await new Promise(r => setTimeout(r, 700));
     const poll = await fetch(`${JUDGE0_URL}/submissions/${token}?base64_encoded=true`);
     const data = await poll.json();
-    if (data.status.id <= 2) continue; // In Queue / Processing
+    if (data.status.id <= 2) continue;
     const stdout = d64(data.stdout).trim();
     const compileErr = d64(data.compile_output).trim();
     const stderr = d64(data.stderr).trim();
@@ -369,36 +369,23 @@ async function runCodeJudge0(code, question, language) {
   return { results, allPassed };
 }
 
-
-/* ─── CONFETTI (player side - left) ─────────────────────────── */
+/* ─── UI COMPONENTS (Confetti, Blast, HP Bar, Timer, etc) ─── */
 function Confetti() {
   const cols = ["#ff5c5c","#22d98a","#f5a623","#9b7fff","#4fa3e0","#f472b6","#facc15","#34d399"];
   const pieces = Array.from({ length: 80 }, (_, i) => ({
-    left: Math.random() * 52,
-    size: 6 + Math.random() * 10,
-    color: cols[i % cols.length],
-    delay: Math.random() * 0.7,
-    dur: 1.0 + Math.random() * 1.4,
-    isCircle: Math.random() > 0.5,
-    rotate: Math.random() * 360,
+    left: Math.random() * 52, size: 6 + Math.random() * 10, color: cols[i % cols.length],
+    delay: Math.random() * 0.7, dur: 1.0 + Math.random() * 1.4, isCircle: Math.random() > 0.5, rotate: Math.random() * 360,
   }));
   return (
     <div className="fixed inset-0 pointer-events-none overflow-hidden z-50">
       {pieces.map((p, i) => (
-        <div key={i} style={{
-          position:"absolute", left:`${p.left}%`, top:"-10%",
-          width:`${p.size}px`, height:`${p.size}px`,
-          background:p.color, borderRadius:p.isCircle?"50%":"2px",
-          transform:`rotate(${p.rotate}deg)`,
-          animation:`cffall ${p.dur}s ease-in ${p.delay}s forwards`,
-        }}/>
+        <div key={i} style={{ position:"absolute", left:`${p.left}%`, top:"-10%", width:`${p.size}px`, height:`${p.size}px`, background:p.color, borderRadius:p.isCircle?"50%":"2px", transform:`rotate(${p.rotate}deg)`, animation:`cffall ${p.dur}s ease-in ${p.delay}s forwards` }}/>
       ))}
       <style>{`@keyframes cffall{0%{top:-10%;opacity:1;transform:rotate(0deg) scale(1);}100%{top:108%;opacity:0;transform:rotate(720deg) scale(0.5);}}`}</style>
     </div>
   );
 }
 
-/* ─── BOMB BLAST (opponent side - right) ────────────────────── */
 function BombBlast() {
   return (
     <div className="fixed inset-0 pointer-events-none z-50">
@@ -410,14 +397,12 @@ function BombBlast() {
   );
 }
 
-/* ─── SKIP NOTIFICATION ──────────────────────────────────────── */
-function SkipNotif() {
+function SkipNotif({ opponentName }) {
   return (
     <div className="fixed inset-0 pointer-events-none z-50 flex items-center justify-center">
-      <div style={{ animation:"skipani 1.4s ease-out forwards" }}
-        className="bg-gray-900 border-2 border-red-500 rounded-2xl px-8 py-5 text-center shadow-2xl">
+      <div style={{ animation:"skipani 1.4s ease-out forwards" }} className="bg-gray-900 border-2 border-red-500 rounded-2xl px-8 py-5 text-center shadow-2xl">
         <div className="text-4xl mb-2">🤖💨</div>
-        <div className="text-red-300 font-black text-lg">AlgoBot Solved It First!</div>
+        <div className="text-red-300 font-black text-lg">{opponentName || "AlgoBot"} Solved It First!</div>
         <div className="text-gray-500 text-sm mt-1">Moving to next question…</div>
       </div>
       <style>{`@keyframes skipani{0%{opacity:0;transform:scale(0.8) translateY(10px);}12%{opacity:1;transform:scale(1.04) translateY(0);}70%{opacity:1;transform:scale(1);}100%{opacity:0;transform:scale(0.96) translateY(-6px);}}`}</style>
@@ -425,7 +410,6 @@ function SkipNotif() {
   );
 }
 
-/* ─── HP BAR ─────────────────────────────────────────────────── */
 function HPBar({ hp, label, isYou }) {
   const pct = Math.max(0, Math.min(100, hp));
   const col = pct > 60 ? "#22d98a" : pct > 30 ? "#f5a623" : "#ff5c5c";
@@ -443,7 +427,6 @@ function HPBar({ hp, label, isYou }) {
   );
 }
 
-/* ─── LIVE TIMER ─────────────────────────────────────────────── */
 function LiveTimer({ seconds }) {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
@@ -456,18 +439,14 @@ function LiveTimer({ seconds }) {
         {String(mins).padStart(2,"0")}:{String(secs).padStart(2,"0")}
       </div>
       <div className="w-16 h-1 bg-gray-800 rounded-full overflow-hidden mt-1">
-        <div className="h-full rounded-full transition-all duration-1000" style={{
-          width:`${pct}%`,
-          background: crit?"#ff5c5c":urgent?"#f5a623":"#22d98a",
-        }}/>
+        <div className="h-full rounded-full transition-all duration-1000" style={{ width:`${pct}%`, background: crit?"#ff5c5c":urgent?"#f5a623":"#22d98a" }}/>
       </div>
     </div>
   );
 }
 
-/* ─── OPPONENT STATUS ────────────────────────────────────────── */
 const STATUS = {
-  idle:       { icon:"💤", label:"Idle",         cls:"text-gray-500  bg-gray-800/60    border-gray-700/40" },
+  idle:       { icon:"💤", label:"Idle",        cls:"text-gray-500  bg-gray-800/60    border-gray-700/40" },
   thinking:   { icon:"🤔", label:"Thinking…",    cls:"text-blue-400  bg-blue-900/30    border-blue-700/40" },
   typing:     { icon:"⌨️",  label:"Typing…",      cls:"text-yellow-400 bg-yellow-900/30 border-yellow-700/40" },
   submitting: { icon:"⚡", label:"Submitting!",  cls:"text-purple-400 bg-purple-900/30 border-purple-700/40" },
@@ -483,7 +462,6 @@ function OpponentStatus({ status }) {
   );
 }
 
-/* ─── QUESTION PANEL ─────────────────────────────────────────── */
 function QuestionPanel({ question, difficulty, qIdx, totalQs, mySolved, aiSolved }) {
   const cfg = {
     easy:   { col:"#22d98a", bg:"bg-green-900/30",  bdr:"border-green-700/40",  label:"Easy"   },
@@ -492,25 +470,16 @@ function QuestionPanel({ question, difficulty, qIdx, totalQs, mySolved, aiSolved
   }[difficulty];
   return (
     <div className="h-full overflow-y-auto p-4 text-sm">
-      {/* Progress dots */}
       <div className="flex items-center gap-2 mb-3">
         {Array.from({length:totalQs},(_,i)=>(
-          <div key={i} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border transition-all duration-300 ${
-            mySolved[i]?"bg-green-500 border-green-400 text-white"
-            :aiSolved[i]?"bg-red-800 border-red-600 text-red-200"
-            :i===qIdx?"bg-purple-700 border-purple-400 text-white"
-            :"bg-gray-800 border-gray-700 text-gray-600"
-          }`}>
+          <div key={i} className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black border transition-all duration-300 ${ mySolved[i]?"bg-green-500 border-green-400 text-white" :aiSolved[i]?"bg-red-800 border-red-600 text-red-200" :i===qIdx?"bg-purple-700 border-purple-400 text-white" :"bg-gray-800 border-gray-700 text-gray-600" }`}>
             {mySolved[i]?"✓":aiSolved[i]?"✗":i+1}
           </div>
         ))}
         <span className="text-xs text-gray-600 ml-1">Q{qIdx+1}/{totalQs}</span>
       </div>
-
       <div className="flex items-center gap-2 mb-3">
-        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.bdr}`} style={{color:cfg.col}}>
-          {cfg.label}
-        </span>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${cfg.bg} ${cfg.bdr}`} style={{color:cfg.col}}>{cfg.label}</span>
         <h2 className="text-sm font-bold text-white leading-tight">{question.title}</h2>
       </div>
       <p className="text-gray-300 text-xs leading-relaxed mb-4 whitespace-pre-wrap">{question.description}</p>
@@ -527,13 +496,10 @@ function QuestionPanel({ question, difficulty, qIdx, totalQs, mySolved, aiSolved
         ))}
       </div>
       <div className="bg-gray-900 rounded-xl p-3 border border-gray-800">
-        <div className="text-[10px] text-gray-500 mb-2 uppercase tracking-widest font-bold">
-          Test Cases ({question.testCases.length})
-        </div>
+        <div className="text-[10px] text-gray-500 mb-2 uppercase tracking-widest font-bold">Test Cases ({question.testCases.length})</div>
         {question.testCases.map((tc,i)=>(
           <div key={i} className="font-mono text-[11px] text-gray-400 py-1 border-b border-gray-800 last:border-0">
-            <span className="text-gray-600">#{i+1} </span>
-            {JSON.stringify(tc.input).slice(0,40)} → <span className="text-green-400">{JSON.stringify(tc.expected)}</span>
+            <span className="text-gray-600">#{i+1} </span>{JSON.stringify(tc.input).slice(0,40)} → <span className="text-green-400">{JSON.stringify(tc.expected)}</span>
           </div>
         ))}
       </div>
@@ -541,8 +507,7 @@ function QuestionPanel({ question, difficulty, qIdx, totalQs, mySolved, aiSolved
   );
 }
 
-/* ─── ROUND OVER MODAL ───────────────────────────────────────── */
-function RoundOverModal({ roundIdx, myScore, aiScore, onNext, isLastRound, totalMyWins, totalAiWins }) {
+function RoundOverModal({ roundIdx, myScore, aiScore, opponentName, onNext, isLastRound, totalMyWins, totalAiWins }) {
   const diff = ROUNDS[roundIdx];
   const iWon = myScore > aiScore;
   const tied = myScore === aiScore;
@@ -550,18 +515,14 @@ function RoundOverModal({ roundIdx, myScore, aiScore, onNext, isLastRound, total
     <div className="fixed inset-0 bg-black/75 backdrop-blur-sm z-40 flex items-center justify-center p-4">
       <div className="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-80 text-center shadow-2xl">
         <div className="text-5xl mb-3">{tied?"🤝":iWon?"🏆":"😤"}</div>
-        <h3 className="text-xl font-black text-white mb-1 capitalize">
-          {diff} Round {tied?"Tied!":iWon?"Won!":"Lost!"}
-        </h3>
-        <p className="text-gray-400 text-xs mb-4">
-          {tied?"Both solved equally — no point awarded":iWon?"You solved more questions! 🎉":"AlgoBot was faster this round!"}
-        </p>
+        <h3 className="text-xl font-black text-white mb-1 capitalize">{diff} Round {tied?"Tied!":iWon?"Won!":"Lost!"}</h3>
+        <p className="text-gray-400 text-xs mb-4">{tied?"Both solved equally — no point awarded":iWon?"You solved more questions! 🎉":`${opponentName || "AlgoBot"} was faster this round!`}</p>
         <div className="bg-gray-950 rounded-xl p-4 mb-3 border border-gray-800">
           <div className="text-[10px] text-gray-500 uppercase mb-2">Round Score</div>
           <div className="flex justify-around">
             <div className="text-center"><div className="text-2xl font-black text-white">{myScore}</div><div className="text-xs text-gray-500">You</div></div>
             <div className="text-gray-700 text-xl self-center">—</div>
-            <div className="text-center"><div className="text-2xl font-black text-white">{aiScore}</div><div className="text-xs text-gray-500">AlgoBot</div></div>
+            <div className="text-center"><div className="text-2xl font-black text-white">{aiScore}</div><div className="text-xs text-gray-500">{opponentName || "AlgoBot"}</div></div>
           </div>
         </div>
         <div className="bg-gray-950 rounded-xl p-3 mb-4 border border-gray-800">
@@ -569,7 +530,7 @@ function RoundOverModal({ roundIdx, myScore, aiScore, onNext, isLastRound, total
           <div className="flex justify-around">
             <div className="text-center"><div className="text-lg font-black text-purple-400">{totalMyWins}</div><div className="text-xs text-gray-500">You</div></div>
             <div className="text-gray-700 text-lg self-center">—</div>
-            <div className="text-center"><div className="text-lg font-black text-red-400">{totalAiWins}</div><div className="text-xs text-gray-500">AlgoBot</div></div>
+            <div className="text-center"><div className="text-lg font-black text-red-400">{totalAiWins}</div><div className="text-xs text-gray-500">{opponentName || "AlgoBot"}</div></div>
           </div>
         </div>
         <button onClick={onNext} className="w-full py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-xl font-bold text-sm transition-all">
@@ -580,15 +541,61 @@ function RoundOverModal({ roundIdx, myScore, aiScore, onNext, isLastRound, total
   );
 }
 
-/* ─── MATCHMAKING ────────────────────────────────────────────── */
-function Matchmaking({ username, onReady }) {
+// ---> MATCHMAKING: 10 SECONDS AI FALLBACK ADDED HERE <---
+function Matchmaking({ username, onReady, setOpponentName, setRoom, setIsAiMode }) {
   const [sec, setSec] = useState(0);
   const [found, setFound] = useState(false);
+  const [oppName, setOppName] = useState("");
+  const [isAiFallback, setIsAiFallback] = useState(false);
+
   useEffect(()=>{
-    const iv = setInterval(()=>setSec(s=>s+1),1000);
-    const t = setTimeout(()=>{clearInterval(iv);setFound(true);setTimeout(()=>onReady(),1800);},8000);
-    return ()=>{clearInterval(iv);clearTimeout(t);};
-  },[onReady]);
+    let foundMatch = false;
+
+    const iv = setInterval(()=>{
+      setSec(s => {
+        // Agar 10 seconds (ticks) poore ho gaye aur match nahi mila -> AlgoBot trigger!
+        if (s >= 9 && !foundMatch) {
+          foundMatch = true;
+          clearInterval(iv);
+          setFound(true);
+          setIsAiFallback(true);
+          setOppName("AlgoBot");
+          setOpponentName("AlgoBot");
+          setIsAiMode(true);
+          setTimeout(()=>onReady(), 2000);
+          return s + 1;
+        }
+        return s + 1;
+      });
+    }, 1000);
+    
+    // Request real match from backend
+    socket.emit('search_match', { username });
+
+    // Listen for real match found
+    socket.on('match_found', (data) => {
+      if (foundMatch) return; // Agar AI fallback pehle ho gaya, toh real match ignore karo
+      foundMatch = true;
+      clearInterval(iv);
+      const isMeP1 = data.opponentForP1.username === username;
+      const opponent = isMeP1 ? data.opponentForP2 : data.opponentForP1;
+      
+      setFound(true);
+      setIsAiFallback(false);
+      setOppName(opponent.username);
+      setOpponentName(opponent.username);
+      setRoom(data.room);
+      setIsAiMode(false);
+      
+      setTimeout(()=>onReady(), 2000);
+    });
+
+    return ()=>{
+      clearInterval(iv);
+      socket.off('match_found');
+    };
+  },[username, onReady, setOpponentName, setRoom, setIsAiMode]);
+
   return (
     <div className="flex flex-col items-center justify-center h-full gap-6 px-4">
       <div className="text-center">
@@ -605,21 +612,24 @@ function Matchmaking({ username, onReady }) {
           <span className="text-gray-500 text-xl font-black">VS</span>
           <div className="flex flex-col items-center gap-1">
             <div className={`w-14 h-14 rounded-full flex items-center justify-center text-2xl border-2 transition-all duration-700 ${found?"bg-red-900/40 border-red-500":"bg-gray-800 border-gray-700 animate-pulse"}`}>
-              {found?"🤖":"?"}
+              {found? (isAiFallback ? "🤖" : "🔥") : "?"}
             </div>
-            <span className="text-xs text-gray-400">{found?"AlgoBot 🤖":"Searching..."}</span>
+            <span className="text-xs text-gray-400">{found?oppName:"Searching..."}</span>
           </div>
         </div>
         {!found?(
           <>
             <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden mb-2">
-              <div className="h-full bg-purple-500 rounded-full transition-all duration-1000" style={{width:`${(sec/8)*100}%`}}/>
+              <div className="h-full bg-purple-500 rounded-full transition-all duration-1000" style={{width:`${(sec/10)*100}%`}}/>
             </div>
-            <p className="text-gray-400 text-xs">Looking for real opponent{".".repeat((sec%3)+1).padEnd(3," ")}</p>
-            <p className="text-gray-600 text-xs mt-1">AlgoBot joins in {Math.max(0,8-sec)}s</p>
+            <p className="text-gray-400 text-xs">Looking for real opponent ({sec}/10s)</p>
           </>
         ):(
-          <p className="text-green-400 font-bold text-sm animate-pulse">AlgoBot accepted! Starting…</p>
+          isAiFallback ? (
+            <p className="text-amber-400 font-bold text-sm animate-pulse">No player found. Playing vs AlgoBot!</p>
+          ) : (
+            <p className="text-green-400 font-bold text-sm animate-pulse">Opponent accepted! Starting…</p>
+          )
         )}
       </div>
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 w-72 text-xs text-gray-500 space-y-1.5">
@@ -635,12 +645,19 @@ function Matchmaking({ username, onReady }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   MAIN
+   MAIN COMPONENT
 ═══════════════════════════════════════════════════════════════ */
 export default function AlgoArena() {
+  
+  const [userData, setUserData] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
+
   const [screen, setScreen]     = useState("lobby");
-  const [username, setUsername] = useState("");
+  const [username, setUsername] = useState(userData?.name || ""); 
   const [aiDiff, setAiDiff]     = useState("medium");
+
+  const [opponentName, setOpponentName] = useState("Opponent");
+  const [room, setRoom] = useState("");
+  const [isAiMode, setIsAiMode] = useState(false); // <-- Tracks if we are playing against AlgoBot
 
   const [roundIdx, setRoundIdx] = useState(0);
   const [qIdx, setQIdx]         = useState(0);
@@ -654,7 +671,6 @@ export default function AlgoArena() {
   const [myTotalWins, setMyTotalWins]   = useState(0);
   const [aiTotalWins, setAiTotalWins]   = useState(0);
 
-  // solved maps — key: `${roundIdx}-${qi}`
   const [mySolvedMap, setMySolvedMap] = useState({});
   const [aiSolvedMap, setAiSolvedMap] = useState({});
 
@@ -677,7 +693,6 @@ export default function AlgoArena() {
   const roundFired    = useRef(false);
   const timerRef      = useRef(null);
 
-  // stable refs for use inside closures
   const qIdxRef         = useRef(qIdx);
   const myRoundRef      = useRef(myRoundScore);
   const aiRoundRef      = useRef(aiRoundScore);
@@ -696,13 +711,11 @@ export default function AlgoArena() {
   const mySolvedArr = [0,1,2].map(i=>!!mySolvedMap[`${roundIdx}-${i}`]);
   const aiSolvedArr = [0,1,2].map(i=>!!aiSolvedMap[`${roundIdx}-${i}`]);
 
-  /* starter code */
   useEffect(()=>{
     if (currentQ?.starter?.[language]) setCode(currentQ.starter[language]);
     setTestResults(null);
   },[qIdx,roundIdx,language]);
 
-  /* round timer */
   useEffect(()=>{
     if (screen!=="battle"||roundOver||gameOver) return;
     setTimeLeft(ROUND_TIME);
@@ -729,7 +742,6 @@ export default function AlgoArena() {
   const flashConfetti = ()=>{ setShowConfetti(true); setTimeout(()=>setShowConfetti(false),2600); };
   const flashBomb     = ()=>{ setShowBomb(true);     setTimeout(()=>setShowBomb(false),1800);     };
 
-  /* end round */
   const doEndRound = useCallback((myRS, aiRS)=>{
     if (roundFired.current) return;
     roundFired.current = true;
@@ -741,17 +753,65 @@ export default function AlgoArena() {
     setRoundOver(true);
   },[]);
 
-  /* AI status sequence for one question */
-  const scheduleAIStatus = (thinkAt, typeAt, submitAt)=>{
+  const scheduleAIStatus = useCallback((thinkAt, typeAt, submitAt)=>{
     const t1 = setTimeout(()=>setOpponentStatus("thinking"),   thinkAt);
     const t2 = setTimeout(()=>setOpponentStatus("typing"),     typeAt);
     const t3 = setTimeout(()=>setOpponentStatus("submitting"), submitAt);
     statusTimers.current.push(t1,t2,t3);
-  };
+  }, []);
 
-  /* AI solve timer scheduling */
+  // ---> SOCKET OPPONENT SYNC (Only if !isAiMode) <---
   useEffect(()=>{
-    if (screen!=="battle") return;
+    if (screen!=="battle" || isAiMode || !room) return;
+    
+    roundFired.current=false;
+    setOpponentStatus("thinking");
+
+    const handleOpponentSolved = ({ qIdx: solvedQIdx }) => {
+      setOpponentStatus("solved");
+      
+      const key = `${roundIdxRef.current}-${solvedQIdx}`;
+      setAiSolvedMap(prev=>{
+        if (prev[key]) return prev;
+        const next = {...prev,[key]:true};
+        
+        setAiRoundScore(ars=>{
+          const newARS = ars+1;
+          aiRoundRef.current = newARS;
+          setMyHP(h=>Math.max(0,h-12));
+          addToast(`🔥 ${opponentName} solved Q${solvedQIdx+1}!`, "danger");
+          flashBomb();
+
+          const curQ = qIdxRef.current;
+          if (curQ === solvedQIdx){
+            setShowSkip(true);
+            setTimeout(()=>{
+              setShowSkip(false);
+              if (solvedQIdx < totalQs-1){
+                setQIdx(solvedQIdx+1);
+                setTestResults(null);
+              }
+            }, 1400);
+          }
+          if (solvedQIdx === totalQs-1){
+            const myS = myRoundRef.current;
+            setTimeout(()=>doEndRound(myS, newARS), 1600);
+          }
+          return newARS;
+        });
+        return next;
+      });
+      setTimeout(()=>setOpponentStatus("thinking"),2200);
+    };
+
+    socket.on('opponent_solved', handleOpponentSolved);
+    return ()=>{ socket.off('opponent_solved', handleOpponentSolved); };
+  },[screen, room, opponentName, doEndRound, totalQs, isAiMode]);
+
+  // ---> ALGOBOT SYNC (Only if isAiMode) <---
+  useEffect(()=>{
+    if (screen!=="battle" || !isAiMode) return;
+
     aiTimers.current.forEach(clearTimeout);
     statusTimers.current.forEach(clearTimeout);
     aiTimers.current=[];
@@ -761,8 +821,6 @@ export default function AlgoArena() {
 
     const qs   = QUESTIONS[ROUNDS[roundIdx]];
     const mult = aiDiff==="easy"?2.0:aiDiff==="medium"?1.1:0.65;
-
-    // Stagger AI attempts: each Q starts thinking only AFTER previous Q resolves
     let cumulativeDelay = 0;
 
     qs.forEach((q, qi)=>{
@@ -779,20 +837,17 @@ export default function AlgoArena() {
       if (willSolve){
         const t = setTimeout(()=>{
           setOpponentStatus("solved");
-          // Mark AI solved
           const key = `${roundIdxRef.current}-${qi}`;
           setAiSolvedMap(prev=>{
             if (prev[key]) return prev;
             const next = {...prev,[key]:true};
-            // increment AI round score
             setAiRoundScore(ars=>{
               const newARS = ars+1;
               aiRoundRef.current = newARS;
               setMyHP(h=>Math.max(0,h-12));
               addToast(`🤖 AlgoBot solved Q${qi+1}!`,"danger");
-              flashBomb(); // bomb on player — they got hit
+              flashBomb();
 
-              // AUTO-ADVANCE if player is currently viewing this question
               const curQ = qIdxRef.current;
               if (curQ === qi){
                 setShowSkip(true);
@@ -802,14 +857,9 @@ export default function AlgoArena() {
                     setQIdx(qi+1);
                     setTestResults(null);
                   }
-                  // Don't end round here — wait for Q3 to also be resolved
                 }, 1400);
               }
-
-              // Round ends only when Q3 (last question) has been resolved by someone
-              // We check: does AI now have qi===2 solved, OR does player have it solved?
               if (qi === totalQs-1){
-                // AI just solved the last question — round over
                 const myS = myRoundRef.current;
                 setTimeout(()=>doEndRound(myS, newARS), 1600);
               }
@@ -817,7 +867,6 @@ export default function AlgoArena() {
             });
             return next;
           });
-          // Reset status to thinking for next Q
           setTimeout(()=>setOpponentStatus("thinking"),2200);
         }, totalDelay);
         aiTimers.current.push(t);
@@ -828,8 +877,6 @@ export default function AlgoArena() {
         }, totalDelay);
         aiTimers.current.push(t);
       }
-
-      // next Q starts after this one resolves
       cumulativeDelay += solveDelay + (willSolve?2000:2500);
     });
 
@@ -837,9 +884,9 @@ export default function AlgoArena() {
       aiTimers.current.forEach(clearTimeout);
       statusTimers.current.forEach(clearTimeout);
     };
-  },[roundIdx,screen]);
+  },[roundIdx, screen, isAiMode, aiDiff, doEndRound, scheduleAIStatus]);
 
-  /* player submit */
+
   const handleSubmit = useCallback(async ()=>{
     if (submitting) return;
     const key = `${roundIdx}-${qIdx}`;
@@ -858,6 +905,35 @@ export default function AlgoArena() {
       setSubmitting(false);
 
       if (allPassed){
+        
+        // Notify opponent only if it's a real player
+        if (!isAiMode) {
+          socket.emit('question_solved', { room, qIdx });
+        }
+
+        // ---> FIX: EVERY QUESTION COIN UPDATE <---
+        // Fetching directly from localStorage inside the function ensures we ALWAYS have the latest coin balance
+        const currentUserStr = localStorage.getItem('user');
+        if (currentUserStr) {
+          const currentUser = JSON.parse(currentUserStr);
+          if (currentUser && currentUser.id) {
+            const newCoins = (currentUser.coins || 0) + 100;
+            const updatedUser = { ...currentUser, coins: newCoins };
+
+            axios.post('http://localhost:5000/api/auth/update-stats', {
+              userId: currentUser.id,
+              coins: newCoins,
+              activeAvatarId: currentUser.activeAvatarId,
+              unlockedAvatars: currentUser.unlockedAvatars
+            }).then(() => {
+              setUserData(updatedUser);
+              localStorage.setItem('user', JSON.stringify(updatedUser));
+              addToast(`🪙 +100 Coins Earned!`, "success"); 
+            }).catch(err => console.error("Coin update failed", err));
+          }
+        }
+        // ------------------------------------------------------------
+
         setMySolvedMap(prev=>{
           if (prev[key]) return prev;
           const next={...prev,[key]:true};
@@ -884,16 +960,14 @@ export default function AlgoArena() {
       setTestResults({ results: [{ passed: false, input: "—", expected: "—", output: `Network error: ${e.message}` }], allPassed: false });
       setSubmitting(false);
     }
-  },[submitting,roundIdx,qIdx,mySolvedMap,code,currentQ,language,doEndRound]);
+  },[submitting,roundIdx,qIdx,mySolvedMap,code,currentQ,language,doEndRound, room, isAiMode]);
 
-  /* ctrl+enter */
   useEffect(()=>{
     const h=(e)=>{ if((e.ctrlKey||e.metaKey)&&e.key==="Enter") handleSubmit(); };
     window.addEventListener("keydown",h);
     return ()=>window.removeEventListener("keydown",h);
   },[handleSubmit]);
 
-  /* next round */
   const handleNextRound = ()=>{
     setRoundOver(false);
     const next=roundIdx+1;
@@ -913,7 +987,6 @@ export default function AlgoArena() {
   const iMeSolved = (ri,qi)=>!!mySolvedMap[`${ri}-${qi}`];
   const isAiSolved= (ri,qi)=>!!aiSolvedMap[`${ri}-${qi}`];
 
-  /* ── LOBBY ── */
   if (screen==="lobby") return (
     <div className="h-screen bg-gray-950 flex items-center justify-center p-6">
       <div className="max-w-sm w-full text-center">
@@ -952,21 +1025,19 @@ export default function AlgoArena() {
     </div>
   );
 
-  /* ── MATCHMAKING ── */
   if (screen==="searching") return (
     <div className="h-screen bg-gray-950">
-      <Matchmaking username={username} onReady={()=>setScreen("battle")}/>
+      <Matchmaking username={username} onReady={()=>setScreen("battle")} setOpponentName={setOpponentName} setRoom={setRoom} setIsAiMode={setIsAiMode}/>
     </div>
   );
 
-  /* ── GAME OVER ── */
   if (gameOver) return (
     <div className="relative h-screen bg-gray-950 flex items-center justify-center p-6">
       {gameOver.win&&<Confetti/>}
       <div className="text-center z-10 max-w-sm w-full">
         <div className="text-7xl mb-4">{gameOver.tie?"🤝":gameOver.win?"🏆":"😢"}</div>
         <h2 className="text-3xl font-black text-white mb-2">
-          {gameOver.tie?"It's a Tie!":gameOver.win?"You're Champion!":"AlgoBot Wins!"}
+          {gameOver.tie?"It's a Tie!":gameOver.win?"You're Champion!":`${opponentName} Wins!`}
         </h2>
         <p className="text-gray-400 text-sm mb-6">
           {gameOver.tie?"Equal skill — rematch?":gameOver.win?"Flawless across all rounds!":"Study up and come back!"}
@@ -982,7 +1053,7 @@ export default function AlgoArena() {
             <div className="text-gray-700 text-2xl self-center">VS</div>
             <div className="text-center">
               <div className="text-4xl font-black text-red-400">{gameOver.aiWins}</div>
-              <div className="text-xs text-gray-400 mt-1">🤖 AlgoBot</div>
+              <div className="text-xs text-gray-400 mt-1">{isAiMode ? "🤖" : "👤"} {opponentName}</div>
               <div className="text-[10px] text-gray-600">rounds won</div>
             </div>
           </div>
@@ -994,25 +1065,21 @@ export default function AlgoArena() {
     </div>
   );
 
-  /* ═══════════════════════════════════════════════════════════
-     BATTLE SCREEN
-  ═══════════════════════════════════════════════════════════ */
   return (
     <div className="h-screen flex flex-col bg-gray-950 overflow-hidden">
 
       {showConfetti&&<Confetti/>}
       {showBomb&&<BombBlast/>}
-      {showSkip&&<SkipNotif/>}
+      {showSkip&&<SkipNotif opponentName={opponentName} />}
 
       {roundOver&&(
         <RoundOverModal
-          roundIdx={roundIdx} myScore={myRoundScore} aiScore={aiRoundScore}
+          roundIdx={roundIdx} myScore={myRoundScore} aiScore={aiRoundScore} opponentName={opponentName}
           onNext={handleNextRound} isLastRound={roundIdx===ROUNDS.length-1}
           totalMyWins={myTotalWins} totalAiWins={aiTotalWins}
         />
       )}
 
-      {/* Toasts */}
       <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none items-center">
         {toasts.map(t=>(
           <div key={t.id} className={`rounded-xl px-5 py-2.5 text-sm font-semibold border shadow-xl whitespace-nowrap ${
@@ -1026,13 +1093,8 @@ export default function AlgoArena() {
       </div>
       <style>{`@keyframes toastin{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:translateY(0);}}`}</style>
 
-      {/* ══ TOP BAR ══ */}
       <div className="bg-gray-900 border-b border-white/8 px-4 py-2 flex items-center justify-between gap-3">
-
-        {/* Player HP */}
         <HPBar hp={myHP} label={`👤 ${username}`} isYou={true}/>
-
-        {/* Centre — round pills + Timer + score */}
         <div className="flex flex-col items-center shrink-0 gap-0.5">
           <div className="flex gap-1 justify-center">
             {ROUNDS.map((r,i)=>(
@@ -1054,19 +1116,16 @@ export default function AlgoArena() {
             <LiveTimer seconds={timeLeft}/>
             <div className="text-center">
               <span className="text-xl font-black text-white">{aiRoundScore}</span>
-              <div className="text-[9px] text-gray-600">bot</div>
+              <div className="text-[9px] text-gray-600">{isAiMode ? "bot" : "opp"}</div>
             </div>
           </div>
         </div>
-
-        {/* Bot HP + live status */}
         <div className="flex flex-col items-end gap-1.5">
-          <HPBar hp={aiHP} label="🤖 AlgoBot" isYou={false}/>
+          <HPBar hp={aiHP} label={`${isAiMode ? "🤖" : "👤"} ${opponentName}`} isYou={false}/>
           <OpponentStatus status={opponentStatus}/>
         </div>
       </div>
 
-      {/* ══ QUESTION TABS ══ */}
       <div className="flex items-center bg-gray-900 border-b border-white/8 px-2 gap-0.5">
         {questions.map((q,i)=>{
           const me=iMeSolved(roundIdx,i);
@@ -1106,10 +1165,7 @@ export default function AlgoArena() {
         </div>
       </div>
 
-      {/* ══ MAIN ══ */}
       <div className="flex-1 grid grid-cols-5 min-h-0">
-
-        {/* Question panel */}
         <div className="col-span-2 border-r border-white/8 min-h-0 overflow-hidden">
           <QuestionPanel
             question={currentQ} difficulty={difficulty}
@@ -1118,10 +1174,7 @@ export default function AlgoArena() {
           />
         </div>
 
-        {/* Editor */}
         <div className="col-span-3 flex flex-col min-h-0">
-
-          {/* Banners */}
           {iMeSolved(roundIdx,qIdx)&&(
             <div className="bg-green-900/20 border-b border-green-800/40 px-4 py-1.5 text-xs text-green-400 font-semibold shrink-0 flex items-center gap-2">
               ✅ Solved! Great job.
@@ -1129,7 +1182,7 @@ export default function AlgoArena() {
           )}
           {!iMeSolved(roundIdx,qIdx)&&isAiSolved(roundIdx,qIdx)&&(
             <div className="bg-red-900/20 border-b border-red-800/40 px-4 py-1.5 text-xs text-red-400 font-semibold shrink-0 flex items-center gap-2">
-              🤖 AlgoBot solved this — you can still try it for practice!
+              🤖 {opponentName} solved this — you can still try it for practice!
             </div>
           )}
 
@@ -1143,14 +1196,11 @@ export default function AlgoArena() {
                 fontSize:13, minimap:{enabled:false},
                 scrollBeyondLastLine:false, lineNumbers:"on",
                 wordWrap:"on", tabSize:2, automaticLayout:true,
-                padding:{top:12},
-                fontFamily:"'JetBrains Mono','Fira Code',monospace",
-                fontLigatures:true,
+                padding:{top:12}, fontFamily:"'JetBrains Mono','Fira Code',monospace", fontLigatures:true,
               }}
             />
           </div>
 
-          {/* Test results */}
           {testResults&&(
             <div className="border-t border-gray-800 bg-gray-950 px-4 py-3 max-h-36 overflow-y-auto shrink-0">
               <div className={`text-xs font-bold mb-2 ${testResults.allPassed?"text-green-400":"text-red-400"}`}>
@@ -1168,14 +1218,13 @@ export default function AlgoArena() {
             </div>
           )}
 
-          {/* Submit bar */}
           <div className="border-t border-white/8 bg-gray-900 flex items-center justify-between px-4 py-2.5 shrink-0">
             <div className="flex gap-3 text-xs text-gray-500 items-center">
               <span className="font-mono text-gray-400">Q{qIdx+1}/{totalQs}</span>
               <span className="text-gray-700">•</span>
               <span>You <b className="text-green-400">{myRoundScore}</b></span>
               <span className="text-gray-700">vs</span>
-              <span>Bot <b className="text-red-400">{aiRoundScore}</b></span>
+              <span>{isAiMode ? "Bot" : "Opp"} <b className="text-red-400">{aiRoundScore}</b></span>
               <span className="text-gray-700 hidden md:inline">• Ctrl+Enter</span>
               {language!=="javascript"&&submitting&&(
                 <span className="text-blue-400 text-xs animate-pulse">⏳ Running on Judge0…</span>

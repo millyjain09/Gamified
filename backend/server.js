@@ -1,209 +1,88 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
-const http = require('http'); 
-const { Server } = require('socket.io'); 
-const { v4: uuidv4 } = require('uuid'); 
+const http = require('http'); // Socket.io ke liye HTTP zaroori hai
+const { Server } = require('socket.io'); // Socket.io import kiya
 require('dotenv').config();
 
-const gameRoutes = require('./routes/gameRoutes');
+const authRoutes = require('./routes/auth');
 
 const app = express();
-const server = http.createServer(app); 
+const server = http.createServer(app); // Express app ko HTTP server mein wrap kiya
 
-// --- MIDDLEWARES ---
-app.use(cors()); 
-app.use(express.json()); 
-
-// --- REST API ROUTES ---
-app.use('/api/games', gameRoutes);
-
-// ==========================================
-// ⚔️ SOCKET.IO MATCHMAKING LOGIC (ALGO ARENA)
-// ==========================================
-
+// Socket.io Server Setup
 const io = new Server(server, {
-    cors: {
-        origin: "*", 
-        methods: ["GET", "POST"]
-    }
+  cors: {
+    origin: "http://localhost:5173", // Tera React Frontend Port (agar 3000 hai toh 3000 kar dena)
+    methods: ["GET", "POST"]
+  }
 });
 
-const waitingQueues = { easy: [], mid: [], high: [] };
-const activeBattles = {};
+// Middleware
+app.use(cors());
+app.use(express.json());
 
-// 🤖 1. NAYA FUNCTION: AI BOT SIMULATOR
-function startAILogic(roomId, level, io) {
-    const battle = activeBattles[roomId];
-    if (!battle || !battle.isAI) return;
+// Routes
+app.use('/api/auth', authRoutes);
 
-    if (battle.aiTimer) clearTimeout(battle.aiTimer);
-    if (battle.aiStatusTimer) clearInterval(battle.aiStatusTimer);
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('MongoDB Connected Successfully'))
+  .catch((err) => console.log('MongoDB Connection Error: ', err));
 
-    let isCompiling = false;
 
-    // AI typing animation
-    battle.aiStatusTimer = setInterval(() => {
-        if (isCompiling) return;
-        const statuses = ["Typing...", "Thinking...", "Typing..."];
-        const randomStatus = statuses[Math.floor(Math.random() * statuses.length)];
-        io.to(roomId).emit("opp_status", randomStatus);
-    }, 3000);
-
-    // Timing logic based on difficulty (Easy: 30-45s)
-    let solveTimeMs = Math.floor(Math.random() * 15000) + 30000; 
-    if (level === 'mid') solveTimeMs += 20000;
-    if (level === 'high') solveTimeMs += 50000;
-
-    // AI solving and sending attack
-    battle.aiTimer = setTimeout(() => {
-        isCompiling = true;
-        io.to(roomId).emit("opp_status", "Compiling ⚙️...");
-
-        setTimeout(() => {
-            if (activeBattles[roomId] && activeBattles[roomId].currentQuestion <= 3) {
-                handleQuestionSolved(roomId, "ai_bot", io);
-            }
-        }, 3000);
-    }, solveTimeMs);
-}
-
-// 🏆 2. NAYA FUNCTION: ROUND COMPLETION LOGIC
-function handleQuestionSolved(roomId, solverId, io) {
-    const battle = activeBattles[roomId];
-    if (!battle) return;
-
-    if (battle.aiTimer) clearTimeout(battle.aiTimer);
-    if (battle.aiStatusTimer) clearInterval(battle.aiStatusTimer);
-
-    if(!battle.scores) battle.scores = {};
-    battle.scores[solverId] = (battle.scores[solverId] || 0) + 1;
-
-    io.to(roomId).emit("round_over", { winnerId: solverId });
-
-    setTimeout(() => {
-        battle.currentQuestion++;
-        
-        if (battle.currentQuestion > 3) {
-            const players = Object.keys(battle.players);
-            const score1 = battle.scores[players[0]] || 0;
-            const score2 = battle.scores[players[1]] || 0;
-            
-            let overallWinner = "Tie";
-            if(score1 > score2) overallWinner = battle.players[players[0]].username;
-            else if(score2 > score1) overallWinner = battle.players[players[1]].username;
-
-            io.to(roomId).emit("game_over", { overallWinner });
-        } else {
-            io.to(roomId).emit("next_question", { qIndex: battle.currentQuestion - 1 });
-            
-            if (battle.isAI) {
-                startAILogic(roomId, battle.level, io);
-            }
-        }
-    }, 4000);
-}
+// --- ⚔️ REAL-TIME MATCHMAKING ENGINE ⚔️ ---
+let waitingPlayer = null; // Jo player match dhoondh raha hai wo yahan wait karega
 
 io.on('connection', (socket) => {
-    console.log(`⚡ Player connected to Arena: ${socket.id}`);
+  console.log('⚡ A Player Connected! Socket ID:', socket.id);
 
-    // 🔄 LIVE STATUS TRACKER (Typing / Compiling)
-    socket.on("update_status", ({ roomId, status }) => {
-        socket.to(roomId).emit("opp_status", status);
-    });
+  // 1. Jab koi player 'Find Match' pe click karega
+  socket.on('search_match', (playerData) => {
+    console.log(`🔍 ${playerData.username} is searching for a match...`);
 
-    // ⚔️ ATTACK LISTENER
-    socket.on("attack", ({ roomId, damage, message }) => {
-        socket.to(roomId).emit("receive_damage", { damage, message });
-    });
+    if (waitingPlayer && waitingPlayer.socket.id !== socket.id) {
+      // MATCH MIL GAYA! Ek player pehle se wait kar raha tha
+      const roomName = `arena_${waitingPlayer.socket.id}_${socket.id}`;
+      
+      // Dono players ko ek "Room" (Battleground) mein daal do
+      socket.join(roomName);
+      waitingPlayer.socket.join(roomName);
 
-    // 🏆 3. UPDATED: JAB KOI QUESTION SOLVE KAR LE (Direct naya function call)
-    socket.on("question_solved", ({ roomId }) => {
-        handleQuestionSolved(roomId, socket.id, io);
-    });
+      console.log(`⚔️ Match Started in ${roomName}`);
 
-    // 🎮 JOIN QUEUE LISTENER
-    socket.on("join_queue", ({ userId, username, level }) => {
-        console.log(`🎮 ${username} joined [${level}] tier queue.`);
-        
-        if (!['easy', 'mid', 'high'].includes(level)) return;
+      // Dono ko bata do ki match mil gaya hai!
+      io.to(roomName).emit('match_found', {
+        room: roomName,
+        opponentForP1: playerData, // Waiting player ko iska data milega
+        opponentForP2: waitingPlayer.playerData // Naye player ko waiting wale ka data milega
+      });
 
-        const queue = waitingQueues[level];
+      waitingPlayer = null; // Queue khali kar do agle players ke liye
+    } else {
+      // Koi nahi hai, toh isko waiting mein daal do
+      waitingPlayer = { socket, playerData };
+      console.log(`⏳ ${playerData.username} is waiting in queue...`);
+    }
+  });
 
-        if (queue.length > 0) {
-            const opponent = queue.shift(); 
-            const roomId = `arena_${uuidv4()}`; 
+  // 2. Jab player question solve kar lega
+  socket.on('question_solved', ({ room, qIdx }) => {
+    // Apne opponent ko message bhejo ki "Maine solve kar liya hai!"
+    socket.to(room).emit('opponent_solved', { qIdx });
+  });
 
-            socket.join(roomId);
-            io.sockets.sockets.get(opponent.socketId)?.join(roomId);
-
-            activeBattles[roomId] = {
-                players: {
-                    [socket.id]: { hp: 100, username },
-                    [opponent.socketId]: { hp: 100, username: opponent.username }
-                },
-                level: level,
-                currentQuestion: 1, 
-                isAI: false,
-                scores: {} 
-            };
-
-            io.to(roomId).emit("match_found", {
-                roomId,
-                opponent: opponent.username,
-                message: "Rival Found! Battle Commences!"
-            });
-
-        } else {
-            const playerObj = { socketId: socket.id, userId, username };
-            queue.push(playerObj);
-
-            setTimeout(() => {
-                const index = waitingQueues[level].findIndex(p => p.socketId === socket.id);
-                
-                if (index !== -1) {
-                    waitingQueues[level].splice(index, 1); 
-                    
-                    const roomId = `arena_ai_${uuidv4()}`;
-                    socket.join(roomId);
-
-                    activeBattles[roomId] = {
-                        players: {
-                            [socket.id]: { hp: 100, username },
-                            "ai_bot": { hp: 100, username: "Shadow Bot (AI)" }
-                        },
-                        level: level,
-                        currentQuestion: 1,
-                        isAI: true,
-                        scores: {} 
-                    };
-
-                    socket.emit("match_found", {
-                        roomId,
-                        opponent: "Shadow Bot (AI)",
-                        message: "No human found. AI Shadow Activated!"
-                    });
-
-                    // 🚀 4. UPDATED: START AI LOGIC HERE
-                    startAILogic(roomId, level, io);
-                }
-            }, 10000); 
-        }
-    });
-
-    // Cleanup on disconnect
-    socket.on("disconnect", () => {
-        console.log(`❌ Player disconnected: ${socket.id}`);
-        ['easy', 'mid', 'high'].forEach(level => {
-            waitingQueues[level] = waitingQueues[level].filter(p => p.socketId !== socket.id);
-        });
-    });
+  // 3. Jab player disconnect ho jaye (Page cut kar de)
+  socket.on('disconnect', () => {
+    console.log('❌ Player Disconnected:', socket.id);
+    if (waitingPlayer && waitingPlayer.socket.id === socket.id) {
+      waitingPlayer = null; // Queue se hata do
+    }
+  });
 });
 
-// --- START SERVER ---
+// Start Server (ab app.listen ki jagah server.listen hoga)
 const PORT = process.env.PORT || 5000;
-
 server.listen(PORT, () => {
-    console.log(`🚀 Server is running on port ${PORT}`);
-    console.log(`🤖 Gemini API is ready to generate anomalies!`);
-    console.log(`⚔️  Algo Arena Socket.io Engine is LIVE!`);
+  console.log(`Server running on port ${PORT}`);
 });

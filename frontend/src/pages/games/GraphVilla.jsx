@@ -1,40 +1,40 @@
 import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 
 const GRID = 11;
 
 const AlgoYudhRatMaze = () => {
   const animTimer = useRef(null);
+  const [userData, setUserData] = useState(() => JSON.parse(localStorage.getItem('user')) || null);
   
-  // --- Yeh raha sirf Boilerplate code jo user ko dikhega ---
+  // --- Simplified Boilerplate for the user ---
   const initialBoilerplate = `function solve(maze, start, end, size) {
   const path = [];
-  const visited = Array(size).fill().map(
-    () => Array(size).fill().map(() => [false, false])
-  );
+  const visited = Array(size).fill().map(() => Array(size).fill().map(() => [false, false]));
 
   function backtrack(r, c, hasKey) {
-    // 1. Boundary check
-    if (r < 0 || c < 0 || r >= size || c >= size) return false;
+    // Basic bounds checking
+    if (r < 0 || c < 0 || r >= size || c >= size || maze[r][c] === 1) return false;
     
-    // 2. Wall check (1 means wall)
-    if (maze[r][c] === 1) return false;
-
-    // TODO: 3. Fire check (maze[r][c] === 'FIRE')
+    // --- WRITE YOUR LOGIC HERE ---
+    // 1. Check if the current cell is 'FIRE'. If yes, return false immediately.
     
-    // TODO: 4. Door check (maze[r][c] === 'DOOR' needs key!)
 
-    // TODO: 5. Key pickup (Check if maze[r][c] === 'KEY')
-    let currentKey = hasKey;
+    // 2. Check if the current cell is 'DOOR'. If yes, and hasKey is false, return false.
+    
 
-    // 6. Visited check (key state matters to avoid loops)
+    // 3. Update currentKey. If the cell is 'KEY', currentKey becomes true.
+    let currentKey = hasKey; // UPDATE THIS
+    // -----------------------------
+
     let kIdx = currentKey ? 1 : 0;
     if (visited[r][c][kIdx]) return false;
 
-    // Record the move
+    // Log path
     path.push({ r, c, type: 'forward', hasKey: currentKey });
     visited[r][c][kIdx] = true;
 
-    // Target reached?
+    // Reached destination?
     if (r === end.r && c === end.c) return true;
 
     // Explore: Down, Right, Up, Left
@@ -58,41 +58,39 @@ const AlgoYudhRatMaze = () => {
   const [vizIdx, setVizIdx] = useState(-1);
   const [hasKey, setHasKey] = useState(false);
   const [status, setStatus] = useState('idle');
-  const [aiMsg, setAiMsg] = useState("AI Coach: Ready to code? Complete the TODOs!");
+  const [aiMsg, setAiMsg] = useState("AI Coach: Ready? Complete the TODOs to guide the mouse!");
   const [speed, setSpeed] = useState(150);
-  const [overlay, setOverlay] = useState({ show: false, icon: '', title: '', btn: '', bg: '' });
-  const [hintVisible, setHintVisible] = useState(false);
+  const [overlay, setOverlay] = useState({ show: false, icon: '', title: '', btn: '', bg: '', stats: null });
+  const [optimalPathLength, setOptimalPathLength] = useState(0);
 
-  // --- Maze Generation Logic (Ported) ---
-  const bfs = (m, start, target, noFire) => {
-    let q = [start], vis = new Set([start[0] + ',' + start[1]]);
-    while (q.length) {
-      let [r, c] = q.shift();
-      if (r === target[0] && c === target[1]) return true;
-      for (let [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
-        let nr = r + dr, nc = c + dc, key = nr + ',' + nc;
-        if (nr < 0 || nc < 0 || nr >= GRID || nc >= GRID) continue;
-        if (m[nr][nc] === 1) continue;
-        if (noFire && m[nr][nc] === 'FIRE') continue;
-        if (!vis.has(key)) { vis.add(key); q.push([nr, nc]); }
-      }
-    }
-    return false;
-  };
-
+  // --- BFS to verify Solvability & Find Shortest Path ---
   const getPath = (m, start, target) => {
-    let parent = {}, q = [start], vis = new Set([start[0] + ',' + start[1]]);
+    let parent = {}, q = [[start[0], start[1], false]], vis = new Set([start[0] + ',' + start[1] + ',false']);
     while (q.length) {
-      let [r, c] = q.shift();
+      let [r, c, keyState] = q.shift();
+      
       if (r === target[0] && c === target[1]) {
-        let path = [], cur = target;
-        while (cur) { path.push(cur); cur = parent[cur[0] + ',' + cur[1]]; }
+        let path = [], cur = [r, c, keyState];
+        while (cur) { 
+          path.push(cur); 
+          cur = parent[cur[0] + ',' + cur[1] + ',' + cur[2]]; 
+        }
         return path.reverse();
       }
+
       for (let [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
-        let nr = r + dr, nc = c + dc, key = nr + ',' + nc;
-        if (nr < 0 || nc < 0 || nr >= GRID || nr >= GRID || m[nr][nc] === 1 || vis.has(key)) continue;
-        vis.add(key); parent[key] = [r, c]; q.push([nr, nc]);
+        let nr = r + dr, nc = c + dc;
+        if (nr < 0 || nc < 0 || nr >= GRID || nc >= GRID || m[nr][nc] === 1 || m[nr][nc] === 'FIRE') continue;
+        
+        let nextKeyState = keyState || m[nr][nc] === 'KEY';
+        if (m[nr][nc] === 'DOOR' && !nextKeyState) continue; // Cannot pass door without key
+
+        let stateStr = nr + ',' + nc + ',' + nextKeyState;
+        if (!vis.has(stateStr)) {
+          vis.add(stateStr); 
+          parent[stateStr] = [r, c, keyState]; 
+          q.push([nr, nc, nextKeyState]);
+        }
       }
     }
     return [];
@@ -100,158 +98,202 @@ const AlgoYudhRatMaze = () => {
 
   const newLevel = () => {
     clearInterval(animTimer.current);
-    setSteps([]); setVizIdx(-1); setStatus('idle'); setHasKey(false);
-    setOverlay({ show: false });
+    setSteps([]); setVizIdx(-1); setStatus('idle'); setHasKey(false); setOverlay({ show: false });
     
-    let m = Array(GRID).fill(0).map(() => Array(GRID).fill(1));
-    const carve = (r, c) => {
-      m[r][c] = 0;
-      let dirs = [[0, 2], [2, 0], [0, -2], [-2, 0]].sort(() => Math.random() - 0.5);
-      for (let [dr, dc] of dirs) {
-        let nr = r + dr, nc = c + dc;
-        if (nr >= 0 && nc >= 0 && nr < GRID && nc < GRID && m[nr][nc] === 1) {
-          m[r + dr / 2][c + dc / 2] = 0; carve(nr, nc);
+    let m = [], mainRoad = [];
+    
+    // Ensure we ALWAYS generate a solvable maze
+    while (mainRoad.length === 0) {
+      m = Array(GRID).fill(1).map(() => Array(GRID).fill(1));
+      const carve = (r, c) => {
+        m[r][c] = 0;
+        let dirs = [[0, 2], [2, 0], [0, -2], [-2, 0]].sort(() => Math.random() - 0.5);
+        for (let [dr, dc] of dirs) {
+          let nr = r + dr, nc = c + dc;
+          if (nr >= 0 && nc >= 0 && nr < GRID && nc < GRID && m[nr][nc] === 1) {
+            m[r + dr / 2][c + dc / 2] = 0; carve(nr, nc);
+          }
+        }
+      };
+      carve(0, 0); m[GRID-1][GRID-1] = 0;
+
+      // Base path without obstacles
+      let basePath = getPath(m, [0, 0], [GRID-1, GRID-1]);
+      
+      if (basePath.length > 5) {
+        let doorCell = basePath[Math.floor(basePath.length * 0.7)];
+        let keyCell = basePath[Math.floor(basePath.length * 0.3)];
+        m[doorCell[0]][doorCell[1]] = 'DOOR';
+        m[keyCell[0]][keyCell[1]] = 'KEY';
+      }
+
+      let roadSet = new Set(basePath.map(p => `${p[0]},${p[1]}`));
+      let fireAdded = 0;
+      for (let r = 0; r < GRID; r++) {
+        for (let c = 0; c < GRID; c++) {
+          if (m[r][c] === 0 && !roadSet.has(`${r},${c}`) && Math.random() > 0.6 && fireAdded < 5) {
+            m[r][c] = 'FIRE'; fireAdded++;
+          }
         }
       }
-    };
-    carve(0, 0); m[GRID - 1][GRID - 1] = 0;
-
-    let rawPath = getPath(m, [0, 0], [GRID - 1, GRID - 1]);
-    let doorCell = rawPath[Math.floor(rawPath.length * 0.55)] || [5, 5];
-    
-    let keyCell = null;
-    for (let i = 0; i < 200; i++) {
-      let r = Math.floor(Math.random() * GRID), c = Math.floor(Math.random() * GRID);
-      if (m[r][c] === 0 && !(r === 0 && c === 0) && !(r === doorCell[0] && c === doorCell[1])) {
-        let testM = m.map(row => [...row]); testM[doorCell[0]][doorCell[1]] = 1;
-        if (bfs(testM, [0, 0], [r, c], false)) { keyCell = [r, c]; break; }
-      }
+      
+      // Verify final solvability with obstacles
+      mainRoad = getPath(m, [0, 0], [GRID-1, GRID-1]);
     }
-    if (!keyCell) keyCell = [0, GRID - 1];
 
-    m[doorCell[0]][doorCell[1]] = 'DOOR';
-    m[keyCell[0]][keyCell[1]] = 'KEY';
-
-    let fireCount = 0;
-    for (let i = 0; i < 300 && fireCount < 5; i++) {
-      let r = Math.floor(Math.random() * GRID), c = Math.floor(Math.random() * GRID);
-      if (m[r][c] === 0 && !(r === 0 && c === 0) && !(r === GRID - 1 && c === GRID - 1)) {
-        m[r][c] = 'FIRE';
-        let t1 = m.map(x => [...x]); t1[doorCell[0]][doorCell[1]] = 0;
-        if (bfs(m, [0, 0], keyCell, true) && bfs(t1, keyCell, [GRID - 1, GRID - 1], true)) fireCount++;
-        else m[r][c] = 0;
-      }
-    }
+    setOptimalPathLength(mainRoad.length); 
     setMaze(m);
-    setAiMsg("AI Coach: Complete the TODOs to reach the cheese!");
+    setAiMsg("AI Coach: Level ready. Avoid the fire, grab the key to unlock the door!");
   };
 
   useEffect(() => { newLevel(); }, []);
 
-  const runCode = (manualCode = null) => {
+  const runCode = (customCode = null) => {
     clearInterval(animTimer.current);
-    setSteps([]); setVizIdx(-1); setHasKey(false); setStatus('idle'); setOverlay({ show: false });
-    const codeToRun = manualCode || code;
+    const codeToEval = customCode || code;
     try {
-      const fn = new Function('maze', 'start', 'end', 'size', codeToRun + '; return solve(maze,start,end,size);');
-      const p = fn(maze.map(r => [...r]), { r: 0, c: 0 }, { r: GRID - 1, c: GRID - 1 }, GRID);
-      if (!Array.isArray(p) || p.length === 0) { setAiMsg("AI Coach: Path empty! Check your logic."); return; }
-      setSteps(p);
-      animate(p);
-    } catch (e) { setAiMsg('AI Coach: Error: ' + e.message.slice(0, 40)); }
+      const userFn = new Function('maze', 'start', 'end', 'size', `${codeToEval}; return solve(maze, start, end, size);`);
+      
+      const t0 = performance.now();
+      const pathSteps = userFn(maze.map(r => [...r]), { r: 0, c: 0 }, { r: GRID - 1, c: GRID - 1 }, GRID);
+      const t1 = performance.now();
+      const execTime = (t1 - t0).toFixed(2);
+
+      if (!pathSteps || pathSteps.length === 0) {
+        setAiMsg("AI Coach: The mouse didn't move! Did you return false too early?");
+        return;
+      }
+      
+      setSteps(pathSteps);
+      animate(pathSteps, execTime);
+    } catch (err) {
+      setAiMsg("AI Coach: Syntax Error - " + err.message.split('\n')[0]);
+    }
   };
 
-  const animate = (path) => {
+  const handleWinScore = (userPathLength, execTimeStr) => {
+    const execTime = parseFloat(execTimeStr);
+    const baseScore = 100;
+    const speedBonus = execTime < 2 ? 50 : execTime < 10 ? 30 : 10;
+    
+    // Path efficiency: How many 'forward' moves did the user's logic take compared to BFS?
+    const forwardSteps = steps.filter(s => s.type === 'forward').length;
+    const extraSteps = forwardSteps - optimalPathLength;
+    const pathBonus = extraSteps <= 0 ? 50 : Math.max(0, 50 - (extraSteps * 2));
+    
+    const totalEarned = baseScore + speedBonus + pathBonus;
+
+    if (userData && userData.id) {
+      const newCoins = (userData.coins || 0) + totalEarned;
+      const updatedUser = { ...userData, coins: newCoins };
+
+      axios.post('http://localhost:5000/api/auth/update-stats', {
+        userId: userData.id,
+        coins: newCoins,
+        activeAvatarId: userData.activeAvatarId,
+        unlockedAvatars: userData.unlockedAvatars
+      }).then(() => {
+        setUserData(updatedUser);
+        localStorage.setItem('user', JSON.stringify(updatedUser)); 
+      }).catch(err => console.error("Coin update failed", err));
+    }
+
+    setOverlay({ 
+      show: true, icon: '🧀', title: 'MISSION PASSED', btn: 'NEXT MAZE', bg: 'rgba(6,78,59,0.95)', mode: 'win',
+      stats: { baseScore, speedBonus, pathBonus, totalEarned, execTime, forwardSteps }
+    });
+  };
+
+  const animate = (path, execTime) => {
     setStatus('running');
-    let idx = 0;
-    let localKey = false;
+    let i = 0;
+    
     animTimer.current = setInterval(() => {
-      if (idx >= path.length) { clearInterval(animTimer.current); setStatus('done'); return; }
-      const s = path[idx];
+      if (i >= path.length) { 
+        clearInterval(animTimer.current); 
+        // If animation ends but didn't reach cheese
+        if (status === 'running') {
+            setStatus('lost');
+            setOverlay({ show: true, icon: '🤔', title: 'LOST IN MAZE', btn: 'RETRY CODE', bg: 'rgba(30,41,59,0.9)' });
+        }
+        return; 
+      }
+      
+      const s = path[i];
       const cell = maze[s.r][s.c];
 
-      if (cell === 'KEY') { localKey = true; setHasKey(true); }
-      if (cell === 'FIRE') {
-        clearInterval(animTimer.current); setStatus('burnt'); setVizIdx(idx);
-        setTimeout(() => setOverlay({ show: true, icon: '💀🔥', title: 'Rat Burnt!', btn: 'Try Again', bg: 'rgba(69,10,10,0.95)' }), 300);
-        return;
-      }
-      if (cell === 'DOOR' && !localKey) {
-        clearInterval(animTimer.current); setStatus('locked'); setVizIdx(idx);
-        setTimeout(() => setOverlay({ show: true, icon: '🔒', title: 'Door Locked!', btn: 'Try Again', bg: 'rgba(15,23,42,0.95)' }), 200);
-        return;
-      }
+      setVizIdx(i);
+      setHasKey(s.hasKey);
 
-      setVizIdx(idx);
-      if (s.r === GRID - 1 && s.c === GRID - 1 && idx === path.length - 1) {
-        clearInterval(animTimer.current); setStatus('win');
-        setTimeout(() => setOverlay({ show: true, icon: '🧀🏆', title: 'Success!', btn: 'Next Level', bg: 'rgba(2,44,20,0.95)', mode: 'win' }), 200);
+      // REAL-TIME COLLISION DETECTION BASED ON USER'S EXACT PATH
+      if (cell === 'FIRE') {
+        setStatus('burnt'); clearInterval(animTimer.current);
+        setOverlay({ show: true, icon: '💀', title: 'BURNED ALIVE!', btn: 'FIX CODE', bg: 'rgba(127,29,29,0.9)' });
+      } else if (cell === 'DOOR' && !s.hasKey) {
+        setStatus('locked'); clearInterval(animTimer.current);
+        setOverlay({ show: true, icon: '🔒', title: 'DOOR LOCKED! NEED KEY!', btn: 'FIX CODE', bg: 'rgba(30,41,59,0.9)' });
+      } else if (s.r === GRID-1 && s.c === GRID-1 && i === path.length - 1) {
+        setStatus('win'); clearInterval(animTimer.current);
+        handleWinScore(path.length, execTime); 
       }
-      idx++;
+      i++;
     }, speed);
   };
 
-  const autoPlay = () => {
-    const fullSolution = `function solve(maze, start, end, size) {
+  const getSolution = () => {
+    const sol = `function solve(maze, start, end, size) {
   const path = [];
   const visited = Array(size).fill().map(() => Array(size).fill().map(() => [false, false]));
+  
   function backtrack(r, c, hasKey) {
-    if (r < 0 || c < 0 || r >= size || c >= size) return false;
-    if (maze[r][c] === 1 || maze[r][c] === 'FIRE') return false;
+    if (r < 0 || c < 0 || r >= size || c >= size || maze[r][c] === 1) return false;
+    
+    if (maze[r][c] === 'FIRE') return false;
     if (maze[r][c] === 'DOOR' && !hasKey) return false;
+    
     let currentKey = hasKey || maze[r][c] === 'KEY';
+    
     let kIdx = currentKey ? 1 : 0;
     if (visited[r][c][kIdx]) return false;
+    
     path.push({ r, c, type: 'forward', hasKey: currentKey });
     visited[r][c][kIdx] = true;
+    
     if (r === end.r && c === end.c) return true;
+    
     if (backtrack(r+1, c, currentKey)) return true;
     if (backtrack(r, c+1, currentKey)) return true;
     if (backtrack(r-1, c, currentKey)) return true;
     if (backtrack(r, c-1, currentKey)) return true;
+    
     path.push({ r, c, type: 'back', hasKey: currentKey });
     return false;
   }
-  return backtrack(0, 0, false) ? path : [];
+  
+  backtrack(start.r, start.c, false);
+  return path;
 }`;
-    setCode(fullSolution);
-    setTimeout(() => runCode(fullSolution), 200);
+    setCode(sol);
+    setTimeout(() => runCode(sol), 100);
   };
 
   return (
     <div style={s.root}>
-      <style>{`
-        @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-4px)} 75%{transform:translateX(4px)} }
-        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-      `}</style>
       <div style={s.header}>
-        <div style={s.title}>ALGO YUDH: RAT MAZE</div>
+        <div style={s.title}>ALGOYUDH: MISSION RAT_MAZE</div>
         <div style={s.btnRow}>
-          <button style={{...s.btn, ...s.btnNew}} onClick={newLevel}>NEW LEVEL</button>
-          <button style={{...s.btn, ...s.btnAuto}} onClick={autoPlay}>GET SOLUTION</button>
-          <button style={{...s.btn, ...s.btnRun}} onClick={() => runCode()}>DEPLOY</button>
+          <div style={s.coinDisplay}>🪙 {userData?.coins || 0}</div>
+          <button style={s.btnReset} onClick={newLevel}>NEW MAZE</button>
+          <button style={s.btnSol} onClick={getSolution}>GET SOLUTION</button>
+          <button style={s.btnRun} onClick={() => runCode()}>DEPLOY CODE</button>
         </div>
       </div>
 
       <div style={s.main}>
         <div style={s.editorPanel}>
-          <div style={s.editorBar}>
-            <span style={s.editorLabel}>EDITOR</span>
-            <button style={s.hintBtn} onClick={() => setHintVisible(!hintVisible)}>HINT</button>
-          </div>
-          {hintVisible && (
-            <div style={s.hintBox}>
-              1. maze[r][c] === 'FIRE' return false.<br/>
-              2. maze[r][c] === 'DOOR' && !hasKey return false.<br/>
-              3. if (maze[r][c] === 'KEY') currentKey = true.
-            </div>
-          )}
-          <textarea style={s.textarea} value={code} onChange={(e) => setCode(e.target.value)} spellCheck="false" />
-          <div style={s.speedRow}>
-            <span style={s.speedLabel}>SPEED:</span>
-            <input type="range" min="50" max="800" step="50" value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
-            <span style={{fontSize: '10px', color: '#94a3b8'}}>{speed}</span>
-          </div>
+           <div style={s.bar}>CODE_EDITOR.js</div>
+           <textarea style={s.textarea} value={code} onChange={e => setCode(e.target.value)} spellCheck="false" />
+           <div style={s.speedBar}>SPEED: {speed}ms <input type="range" min="20" max="500" value={speed} onChange={e => setSpeed(Number(e.target.value))} /></div>
         </div>
 
         <div style={s.gamePanel}>
@@ -260,27 +302,22 @@ const AlgoYudhRatMaze = () => {
             {maze.map((row, r) => row.map((val, c) => {
               const step = steps.slice(0, vizIdx + 1).find(st => st.r === r && st.c === c);
               const isCur = steps[vizIdx]?.r === r && steps[vizIdx]?.c === c;
-              let bg = 'rgba(0,0,0,0.3)';
+              
+              let bg = '#0f172a';
               if (val === 1) bg = '#1e293b';
               else if (val === 'FIRE') bg = '#450a0a';
-              else if (val === 'DOOR') bg = hasKey ? '#14532d' : '#431407';
-              else if (val === 'KEY' && !hasKey) bg = '#422006';
-              else if (step?.type === 'forward') bg = 'rgba(34,211,238,0.2)';
-              else if (step?.type === 'back') bg = 'rgba(234,88,12,0.1)';
+              else if (val === 'DOOR') bg = hasKey ? '#064e3b' : '#451a03';
+              else if (step?.type === 'forward') bg = '#0e7490';
+              else if (step?.type === 'back') bg = '#312e81';
 
               return (
-                <div key={`${r}-${c}`} style={{...s.cell, background: bg}}>
-                  {isCur ? (
-                    <span style={{fontSize: '14px', position: 'relative', animation: status === 'burnt' ? 'shake 0.3s infinite' : 'none'}}>
-                      {status === 'burnt' ? '💀' : '🐭'}
-                      {hasKey && <span style={{position:'absolute', top:'-4px', right:'-4px', fontSize:'8px'}}>🗝️</span>}
-                    </span>
-                  ) : (
+                <div key={`${r}-${c}`} style={{...s.cell, background: bg, border: isCur ? '2px solid #22d3ee' : '1px solid rgba(255,255,255,0.05)'}}>
+                  {isCur ? (status === 'burnt' ? '💀' : '🐭') : (
                     <>
-                      {val === 'KEY' && !hasKey && <span style={{animation: 'pulse 1.5s infinite'}}>🗝️</span>}
+                      {val === 'KEY' && !hasKey && '🗝️'}
                       {val === 'DOOR' && (hasKey ? '🔓' : '🚪')}
                       {val === 'FIRE' && '🔥'}
-                      {r === GRID - 1 && c === GRID - 1 && val !== 'FIRE' && '🧀'}
+                      {r === GRID-1 && c === GRID-1 && '🧀'}
                     </>
                   )}
                 </div>
@@ -289,9 +326,21 @@ const AlgoYudhRatMaze = () => {
           </div>
           {overlay.show && (
             <div style={{...s.overlay, background: overlay.bg}}>
-              <div style={s.overlayIcon}>{overlay.icon}</div>
-              <div style={s.overlayTitle}>{overlay.title}</div>
-              <button style={s.overlayBtn} onClick={overlay.mode === 'win' ? newLevel : () => setOverlay({show:false})}>{overlay.btn}</button>
+              <div style={{fontSize: '50px'}}>{overlay.icon}</div>
+              <div style={{fontSize: '20px', fontWeight: 'bold', margin: '10px 0'}}>{overlay.title}</div>
+              
+              {overlay.stats && (
+                <div style={s.reportCard}>
+                  <div style={s.reportTitle}>ALGORITHM REPORT</div>
+                  <div style={s.reportRow}><span>Mission Clear:</span> <span style={{color: '#34d399'}}>+{overlay.stats.baseScore}</span></div>
+                  <div style={s.reportRow}><span>Speed ({overlay.stats.execTime}ms):</span> <span style={{color: '#34d399'}}>+{overlay.stats.speedBonus}</span></div>
+                  <div style={s.reportRow}><span>Path ({overlay.stats.forwardSteps} steps):</span> <span style={{color: '#34d399'}}>+{overlay.stats.pathBonus}</span></div>
+                  <div style={s.reportDivider}></div>
+                  <div style={s.reportTotal}><span>TOTAL EARNED:</span> <span style={{color: '#fbbf24'}}>+{overlay.stats.totalEarned} 🪙</span></div>
+                </div>
+              )}
+
+              <button style={s.overlayBtn} onClick={overlay.mode==='win' ? newLevel : ()=>setOverlay({show:false})}>{overlay.btn}</button>
             </div>
           )}
         </div>
@@ -301,31 +350,30 @@ const AlgoYudhRatMaze = () => {
 };
 
 const s = {
-  root: { minHeight: '100vh', background: '#050510', color: '#e2e8f0', fontFamily: "monospace", padding: '12px', display: 'flex', flexDirection: 'column', gap: '10px' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#111122', padding: '10px 16px', borderRadius: '12px', border: '0.5px solid rgba(255,255,255,0.1)' },
-  title: { fontSize: '16px', fontWeight: '900', color: '#22d3ee', fontStyle: 'italic' },
-  btnRow: { display: 'flex', gap: '8px' },
-  btn: { padding: '6px 14px', borderRadius: '6px', fontWeight: '700', fontSize: '11px', cursor: 'pointer', border: 'none' },
-  btnNew: { background: '#1e293b', color: '#67e8f9' },
-  btnAuto: { background: '#4338ca', color: 'white' },
-  btnRun: { background: 'linear-gradient(90deg,#0891b2,#1d4ed8)', color: 'white' },
-  main: { display: 'flex', gap: '10px', flex: 1 },
-  editorPanel: { flex: 1, background: '#0c0c1e', borderRadius: '12px', border: '0.5px solid rgba(255,255,255,0.07)', display: 'flex', flexDirection: 'column' },
-  editorBar: { display: 'flex', justifyContent: 'space-between', padding: '6px 12px', background: 'rgba(255,255,255,0.04)' },
-  editorLabel: { fontSize: '10px', color: '#eab308', letterSpacing: '2px' },
-  hintBtn: { background: 'none', border: 'none', color: '#fbbf24', cursor: 'pointer', fontSize: '11px' },
-  hintBox: { background: '#fbbf24', color: '#000', padding: '10px', fontSize: '10px', borderRadius: '8px', margin: '8px 12px' },
-  textarea: { flex: 1, background: 'transparent', padding: '12px', color: '#a5f3fc', fontSize: '11px', lineHeight: '1.6', resize: 'none', outline: 'none', border: 'none', fontFamily: 'monospace' },
-  speedRow: { display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'rgba(255,255,255,0.03)' },
-  speedLabel: { fontSize: '10px', color: '#94a3b8' },
-  gamePanel: { width: '400px', background: '#0d0d1a', borderRadius: '12px', border: '0.5px solid rgba(255,255,255,0.07)', padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  gridWrap: { display: 'inline-grid', gap: '5px' },
-  cell: { width: '30px', height: '30px', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  overlay: { position: 'absolute', inset: 0, borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 50, backdropFilter: 'blur(8px)' },
-  overlayIcon: { fontSize: '52px' },
-  overlayTitle: { fontSize: '20px', color: 'white', letterSpacing: '2px' },
-  overlayBtn: { marginTop: '20px', padding: '10px 28px', background: 'white', borderRadius: '999px', border: 'none', cursor: 'pointer' },
-  aiBar: { fontSize: '10px', color: '#94a3b8', padding: '4px 0' }
+  root: { height: '100vh', background: '#020617', color: '#f8fafc', padding: '15px', display: 'flex', flexDirection: 'column', gap: '15px', fontFamily: 'monospace' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#0f172a', padding: '12px 20px', borderRadius: '8px', border: '1px solid #1e293b' },
+  title: { fontSize: '18px', fontWeight: 'bold', color: '#22d3ee', letterSpacing: '1px' },
+  btnRow: { display: 'flex', gap: '10px', alignItems: 'center' },
+  coinDisplay: { background: 'rgba(251, 191, 36, 0.1)', color: '#fbbf24', border: '1px solid #fbbf24', padding: '6px 12px', borderRadius: '4px', fontWeight: 'bold', marginRight: '10px' },
+  btnReset: { background: '#1e293b', color: '#cbd5e1', padding: '8px 15px', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+  btnSol: { background: '#312e81', color: 'white', padding: '8px 15px', border: 'none', borderRadius: '4px', cursor: 'pointer' },
+  btnRun: { background: 'linear-gradient(to right, #0891b2, #2563eb)', color: 'white', padding: '8px 15px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
+  main: { display: 'flex', flex: 1, gap: '15px', minHeight: 0 },
+  editorPanel: { flex: 1.2, background: '#0f172a', borderRadius: '8px', display: 'flex', flexDirection: 'column', border: '1px solid #1e293b' },
+  bar: { padding: '8px 15px', background: '#1e293b', fontSize: '12px', color: '#94a3b8' },
+  textarea: { flex: 1, background: 'transparent', color: '#67e8f9', padding: '15px', border: 'none', resize: 'none', outline: 'none', fontSize: '13px', lineHeight: '1.6' },
+  speedBar: { padding: '10px', background: '#0f172a', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '10px', color: '#94a3b8' },
+  gamePanel: { flex: 1, background: '#0f172a', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', position: 'relative', border: '1px solid #1e293b' },
+  gridWrap: { display: 'grid', gap: '3px' },
+  cell: { width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '16px', borderRadius: '3px', transition: 'all 0.2s' },
+  aiBar: { position: 'absolute', top: '20px', color: '#94a3b8', fontSize: '12px' },
+  overlay: { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 100, borderRadius: '8px', backdropFilter: 'blur(4px)' },
+  overlayBtn: { padding: '10px 25px', borderRadius: '20px', border: 'none', fontWeight: 'bold', cursor: 'pointer', background: 'white', color: 'black', marginTop: '10px' },
+  reportCard: { background: 'rgba(0,0,0,0.6)', border: '1px solid #374151', padding: '20px', borderRadius: '8px', width: '300px', marginBottom: '20px', textAlign: 'left' },
+  reportTitle: { color: '#94a3b8', fontSize: '12px', letterSpacing: '2px', marginBottom: '15px', borderBottom: '1px dashed #374151', paddingBottom: '5px' },
+  reportRow: { display: 'flex', justifyContent: 'space-between', color: '#e2e8f0', fontSize: '14px', marginBottom: '8px' },
+  reportDivider: { height: '1px', background: '#374151', margin: '15px 0' },
+  reportTotal: { display: 'flex', justifyContent: 'space-between', color: '#fff', fontSize: '18px', fontWeight: 'bold' }
 };
 
 export default AlgoYudhRatMaze;
