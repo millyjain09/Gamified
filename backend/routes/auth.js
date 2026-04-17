@@ -106,4 +106,27 @@ router.post('/update-stats', async (req, res) => {
   }
 });
 
+// ---> NEW: GET REAL-TIME GLOBAL RANK <---
+router.get('/rank/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // Sort all users by coins descending (highest coins first)
+    const allUsers = await User.find().sort({ coins: -1 }).select('_id');
+    
+    // Find the index of the current user
+    const userRankIndex = allUsers.findIndex(u => u._id.toString() === userId);
+    
+    if (userRankIndex === -1) {
+      return res.status(404).json({ error: "User not found" });
+    }
+    
+    // Rank is index + 1 (since array starts at 0)
+    res.json({ rank: userRankIndex + 1 });
+  } catch (error) {
+    console.error("🔥 Error calculating rank:", error);
+    res.status(500).json({ error: "Server error calculating rank" });
+  }
+});
+
 module.exports = router;

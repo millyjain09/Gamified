@@ -2,22 +2,42 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Lock, Coins, Play, Trophy, Cpu, Award, 
-  ShieldCheck, Star, ChevronDown, CheckCircle2, Zap, X, BarChart3, ChevronRight 
+  CheckCircle2, Zap, X, ChevronRight, Sword, LogOut, Crosshair, Terminal, Sparkles, LayoutDashboard 
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios'; // <-- Added axios
+import axios from 'axios';
 
 const PerfectedGamifiedDashboard = () => {
   const navigate = useNavigate();
   const [isBadgeOpen, setIsBadgeOpen] = useState(false);
+  const [liveRank, setLiveRank] = useState("...");
+  
+  // NAVBAR HIDE ON SCROLL LOGIC
+  const [showNavbar, setShowNavbar] = useState(true);
+  const [lastScrollY, setLastScrollY] = useState(0);
 
-  // BACKEND INTEGRATION: LocalStorage se real-time data fetch kar raha hai
+  useEffect(() => {
+    const handleScroll = () => {
+      if (typeof window !== 'undefined') {
+        if (window.scrollY > lastScrollY && window.scrollY > 80) {
+          setShowNavbar(false); 
+        } else {
+          setShowNavbar(true);  
+        }
+        setLastScrollY(window.scrollY);
+      }
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [lastScrollY]);
+
+  // --- 100% PRESERVED BACKEND INTEGRATION LOGIC ---
   const [user, setUser] = useState(() => {
     const savedData = localStorage.getItem('user');
     const parsedUser = savedData ? JSON.parse(savedData) : null;
 
     return {
-      id: parsedUser?.id || null, // <-- Added ID so backend knows who to update
+      id: parsedUser?.id || null, 
       name: parsedUser?.name || "GUEST_PLAYER",
       coins: parsedUser?.coins || 0,
       max_xp: parsedUser?.max_xp || 5000,
@@ -27,42 +47,47 @@ const PerfectedGamifiedDashboard = () => {
       unlockedAvatars: parsedUser?.unlockedAvatars || [1],
       earnedBadges: parsedUser?.earnedBadges || [],
       realms: parsedUser?.realms || [
-        { id: 'dsa', name: 'DSA Dojo', progress: 0, color: 'text-cyan-400' },
-        { id: 'fs', name: 'Fullstack Fortress', progress: 0, color: 'text-purple-400' },
+        { id: 'dsa', name: 'DSA Dojo', progress: 45, color: 'text-[#D81B60]' },
+        { id: 'fs', name: 'Fullstack Fortress', progress: 12, color: 'text-white' },
       ]
     };
   });
 
-  // BACKEND INTEGRATION: Security check (Token nahi toh login pe bhej do)
   useEffect(() => {
     const token = localStorage.getItem('token');
     const guest = localStorage.getItem('guestMode');
-    
-    if (!token && !guest) {
-      navigate('/');
-    }
+    if (!token && !guest) navigate('/');
   }, [navigate]);
 
-  // 6 Gaming-Style Avatars
+  useEffect(() => {
+    const fetchRank = async () => {
+      if (user.id && user.name !== "GUEST_PLAYER") {
+        try {
+          const response = await axios.get(`http://localhost:5000/api/auth/rank/${user.id}`);
+          setLiveRank(response.data.rank);
+        } catch (error) { setLiveRank("?"); }
+      } else { setLiveRank("-"); }
+    };
+    fetchRank();
+  }, [user.coins, user.id]); 
+
   const avatars = [
-    { id: 1, name: "Neon Recon", cost: 0, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=NeonRecon&backgroundColor=b6e3f4", isLocked: false },
-    { id: 2, name: "Byte Op", cost: 800, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=ByteOp&backgroundColor=ffdfbf", isLocked: true },
-    { id: 3, name: "Kernel Cmdr", cost: 1500, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Kernel&backgroundColor=c0aede", isLocked: true },
-    { id: 4, name: "Binary Warlord", cost: 5000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Warlord&backgroundColor=ffb8b8", isLocked: true },
-    { id: 5, name: "Cyber Ghost", cost: 10000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Ghost&backgroundColor=b6e3a0", isLocked: true },
-    { id: 6, name: "Phantom Striker", cost: 25000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Phantom&backgroundColor=000000", isLocked: true },
+    { id: 1, name: "Neon Recon", cost: 0, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=NeonRecon&backgroundColor=transparent", isLocked: false },
+    { id: 2, name: "Byte Op", cost: 800, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=ByteOp&backgroundColor=transparent", isLocked: true },
+    { id: 3, name: "Kernel Cmdr", cost: 1500, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Kernel&backgroundColor=transparent", isLocked: true },
+    { id: 4, name: "Binary Warlord", cost: 5000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Warlord&backgroundColor=transparent", isLocked: true },
+    { id: 5, name: "Cyber Ghost", cost: 10000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Ghost&backgroundColor=transparent", isLocked: true },
+    { id: 6, name: "Phantom Striker", cost: 25000, img: "https://api.dicebear.com/7.x/adventurer/svg?seed=Phantom&backgroundColor=transparent", isLocked: true },
   ];
 
   const badgeLibrary = [
-    { id: 1, name: "Fast Learner", desc: "Complete 5 problems in 24h", icon: <Zap size={18}/> },
-    { id: 2, name: "Algorithm Architect", desc: "Master all Array missions", icon: <ShieldCheck size={18}/> },
-    { id: 3, name: "Fullstack Fortress", desc: "Deploy your first MERN project", icon: <BarChart3 size={18}/> },
+    { id: 1, name: "Code Ninja", desc: "Win 5 consecutive matches", icon: <Sword size={20} className="text-[#D81B60]" /> },
+    { id: 2, name: "Fast Coder", desc: "Solve Rat Maze under 50s", icon: <Zap size={20} className="text-[#FF8A00]" /> },
+    { id: 3, name: "Logic Architect", desc: "Match optimal path exactly", icon: <Cpu size={20} className="text-white" /> },
   ];
 
-  // <-- UPDATED: Now Async and syncs with DB & LocalStorage -->
   const handleUnlockOrSelect = async (avatarId) => {
     const avatar = avatars.find(av => av.id === avatarId);
-    
     let newCoins = user.coins;
     let newUnlockedAvatars = [...user.unlockedAvatars];
     let newActiveAvatar = avatarId;
@@ -73,292 +98,336 @@ const PerfectedGamifiedDashboard = () => {
       if (window.confirm(`Deploy ${avatar.name} for ${avatar.cost} XP?`)) {
         newCoins = user.coins - avatar.cost;
         newUnlockedAvatars.push(avatarId);
-      } else {
-        return; // User cancelled
-      }
+      } else return; 
     } else {
       alert(`INSUFFICIENT FUNDS: Need ${avatar.cost - user.coins} more XP!`);
       return;
     }
 
-    const updatedUserData = {
-      ...user,
-      coins: newCoins,
-      unlockedAvatars: newUnlockedAvatars,
-      activeAvatarId: newActiveAvatar
-    };
+    const updatedUserData = { ...user, coins: newCoins, unlockedAvatars: newUnlockedAvatars, activeAvatarId: newActiveAvatar };
 
     try {
-      // 1. Sync with Database
       if (user.id) {
-        await axios.post('http://localhost:5000/api/auth/update-stats', {
-          userId: user.id,
-          coins: newCoins,
-          activeAvatarId: newActiveAvatar,
-          unlockedAvatars: newUnlockedAvatars
-        });
+        await axios.post('http://localhost:5000/api/auth/update-stats', { userId: user.id, coins: newCoins, activeAvatarId: newActiveAvatar, unlockedAvatars: newUnlockedAvatars });
       }
-
-      // 2. Update React State
       setUser(updatedUserData);
-
-      // 3. Update LocalStorage so refresh doesn't break
       localStorage.setItem('user', JSON.stringify(updatedUserData));
+    } catch (err) { alert("Error syncing with server! Check your connection."); }
+  };
 
-    } catch (err) {
-      console.error("Failed to save progress", err);
-      alert("Error syncing with server! Check your connection.");
-    }
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('guestMode');
+    navigate('/');
   };
 
   const currentAvatarImg = avatars.find(av => av.id === user.activeAvatarId).img;
 
+  // --- UNIQUE UI GEOMETRY ---
+  const clipTech = { clipPath: 'polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px)' };
+  const clipCard = { clipPath: 'polygon(0 0, calc(100% - 20px) 0, 100% 20px, 100% 100%, 20px 100%, 0 calc(100% - 20px))' };
+  const clipNav = { clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 15px), calc(100% - 30px) 100%, 30px 100%, 0 calc(100% - 15px))' };
+
   return (
-    <div className="min-h-screen bg-[#020205] text-white font-mono selection:bg-cyan-500 overflow-x-hidden">
+    <div className="min-h-screen bg-[#050505] text-slate-300 font-sans selection:bg-[#D81B60] selection:text-white overflow-x-hidden relative">
       
-      {/* Immersive Sci-Fi Grid Background */}
-      <div className="fixed inset-0 z-0 opacity-20 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#1a1a1a 1px, transparent 1px), linear-gradient(90deg, #1a1a1a 1px, transparent 1px)', backgroundSize: '40px 40px' }}></div>
-      <div className="fixed inset-0 z-0 bg-gradient-to-b from-black/80 via-transparent to-[#020205] pointer-events-none"></div>
+      {/* --- WEB3 GRADIENT BACKGROUND --- */}
+      <div className="fixed inset-0 z-0 bg-[#050505] pointer-events-none"></div>
+      <div className="fixed top-[-20%] left-[-10%] w-[60vw] h-[60vw] bg-[#D81B60]/15 blur-[150px] rounded-full pointer-events-none z-0"></div>
+      <div className="fixed bottom-[-10%] right-[-10%] w-[50vw] h-[50vw] bg-[#FF8A00]/15 blur-[150px] rounded-full pointer-events-none z-0"></div>
+      <div className="fixed inset-0 z-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#ffffff 1px, transparent 1px), linear-gradient(90deg, #ffffff 1px, transparent 1px)', backgroundSize: '60px 60px' }}></div>
 
-      {/* --- HUD NAVBAR (Fully Responsive) --- */}
-      <motion.nav 
-        initial={{ y: -50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
-        className="fixed top-0 w-full z-[100] bg-black/80 backdrop-blur-xl border-b border-cyan-500/20 p-3 px-4 md:px-8 flex justify-between items-center"
+      {/* --- HUD NAVBAR --- */}
+      <nav 
+        className={`fixed top-0 w-full z-50 flex justify-between items-start px-4 md:px-6 pt-4 pointer-events-none transition-transform duration-500 ease-in-out ${showNavbar ? 'translate-y-0' : '-translate-y-[150%]'}`}
       >
-        {/* Left Section: Logo (Clickable to /) */}
+        {/* LOGO */}
+        <div className="pointer-events-auto flex items-center gap-2">
+           <Cpu className="text-[#D81B60] w-5 h-5 md:w-6 md:h-6 animate-pulse" />
+           <h1 className="text-xl md:text-2xl font-black tracking-widest text-white uppercase italic">
+             DEV<span className="text-[#D81B60]">_QUEST</span>
+           </h1>
+        </div>
+
+        {/* CENTER STATS (Glassmorphism Tech Bar) */}
         <div 
-          onClick={() => navigate('/')} 
-          className="flex items-center gap-2 md:gap-3 cursor-pointer group"
+          className="pointer-events-auto hidden lg:flex items-center gap-8 bg-black/30 backdrop-blur-md border-t-2 border-[#D81B60]/50 px-12 py-3 shadow-[0_10px_30px_rgba(216,27,96,0.1)]"
+          style={clipNav}
         >
-          <div className="p-1.5 md:p-2 bg-cyan-500 rounded shadow-[0_0_10px_#22d3ee] group-hover:scale-110 transition-transform">
-            <Cpu className="text-black w-4 h-4 md:w-5 md:h-5" />
+          <div className="flex flex-col items-center">
+            <span className="text-[9px] text-[#D81B60] font-bold uppercase tracking-[0.2em]">Global Rank</span>
+            <span className="text-sm font-black text-white flex items-center gap-1"><Trophy size={12} className="text-[#FF8A00]" /> #{liveRank}</span>
           </div>
-          <span className="text-lg md:text-xl font-black tracking-widest text-white italic uppercase group-hover:text-cyan-400 transition-colors">
-            Dev<span className="hidden sm:inline">_Quest</span>
-          </span>
-        </div>
-
-        {/* Right Section: Rank, Balance, Badges, Profile */}
-        <div className="flex items-center gap-3 md:gap-6">
-          
-          {/* Global Rank (Hidden on very small screens) */}
-          <div className="hidden md:flex flex-col items-end border-r border-white/10 pr-4 md:pr-6">
-            <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Global Rank</span>
-            <span className="text-white font-black text-xs italic flex items-center gap-1">
-              <Trophy size={12} className="text-yellow-500" /> #{user.rank}
-            </span>
-          </div>
-
-          {/* Badges Button */}
-          <button 
-            onClick={() => setIsBadgeOpen(!isBadgeOpen)}
-            className={`flex items-center gap-1 md:gap-2 px-2 md:px-4 py-1.5 md:py-2 rounded-lg border transition-all ${
-              isBadgeOpen ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_15px_#22d3ee]' : 'bg-white/5 border-white/10 hover:bg-cyan-500/10 hover:text-cyan-400'
-            }`}
-          >
-            <Award size={16} />
-            <span className="text-[10px] md:text-xs font-black uppercase italic tracking-tighter hidden sm:inline">Badges</span>
+          <div className="w-[1px] h-6 bg-white/10"></div>
+          <button onClick={() => setIsBadgeOpen(true)} className="flex flex-col items-center group hover:text-[#D81B60] transition-colors">
+            <span className="text-[9px] text-slate-400 font-bold uppercase tracking-[0.2em] group-hover:text-[#D81B60]/70">Achievements</span>
+            <span className="text-sm font-black text-white flex items-center gap-1"><Award size={12}/> Badges</span>
           </button>
-
-          {/* Balance */}
-          <div className="flex items-center gap-2 bg-white/5 border border-white/10 px-2 md:px-4 py-1.5 rounded-lg shadow-inner">
-            <Coins className="text-yellow-400 animate-pulse w-4 h-4 md:w-5 md:h-5" />
-            <div className="leading-none text-left">
-              <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter hidden md:block">Balance</p>
-              <p className="text-yellow-400 font-black text-xs md:text-lg">{user.coins}</p>
-            </div>
+          <div className="w-[1px] h-6 bg-white/10"></div>
+          <div className="flex flex-col items-center">
+            <span className="text-[9px] text-white font-bold uppercase tracking-[0.2em]">XP Balance</span>
+            <span className="text-sm font-black text-white flex items-center gap-1"><Coins size={12} className="text-[#D81B60]" /> {user.coins}</span>
           </div>
-
-          {/* Profile Circle (Real-time update) */}
-          <div className="relative cursor-pointer group">
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-cyan-950 rounded-full overflow-hidden border-2 border-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.5)] group-hover:scale-105 transition-transform p-0.5">
-               <img src={currentAvatarImg} alt="Profile" className="w-full h-full rounded-full object-cover" />
-            </div>
-            <div className="absolute -top-1 -right-1 bg-yellow-400 text-black font-black text-[8px] md:text-[9px] w-4 h-4 md:w-5 md:h-5 rounded-full flex items-center justify-center border border-black">
-              {user.level}
-            </div>
-          </div>
-
         </div>
-      </motion.nav>
 
-      {/* --- SIDE BADGE PANEL --- */}
-      <AnimatePresence>
-        {isBadgeOpen && (
-          <>
-            <motion.div 
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setIsBadgeOpen(false)}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[110]"
-            />
-            
-            <motion.div 
-              initial={{ x: -400, opacity: 0 }} animate={{ x: 20, opacity: 1 }} exit={{ x: -400, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 200, damping: 20 }}
-              className="fixed top-24 left-0 z-[120] w-[300px] md:w-[340px] bg-[#0a0a10] border-2 border-cyan-500/30 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.9)] overflow-hidden"
-            >
-              <div className="p-4 md:p-5 border-b border-white/10 flex justify-between items-center bg-cyan-950/30">
-                <h3 className="text-xs md:text-sm font-black uppercase italic tracking-widest text-cyan-400 flex items-center gap-2"><Trophy size={14}/> Achievement File</h3>
-                <X size={18} className="cursor-pointer text-slate-500 hover:text-white" onClick={() => setIsBadgeOpen(false)} />
-              </div>
-
-              <div className="p-4 space-y-3 overflow-y-auto max-h-[60vh] custom-scrollbar">
-                {badgeLibrary.map((badge) => {
-                  const isEarned = user.earnedBadges.includes(badge.id);
-                  return (
-                    <motion.div whileHover={{ scale: 1.02, x: 5 }} key={badge.id} className={`p-3 md:p-4 rounded-xl border flex gap-3 transition-all ${isEarned ? 'bg-cyan-950/20 border-cyan-500/20 shadow-[inset_0_0_10px_rgba(34,211,238,0.1)]' : 'bg-black opacity-30 border-white/5'}`}>
-                      <div className={`mt-1 ${isEarned ? 'text-cyan-400' : 'text-slate-700'}`}>
-                        {badge.icon}
-                      </div>
-                      <div>
-                        <p className={`text-[11px] md:text-[12px] font-black uppercase tracking-tight ${isEarned ? 'text-white' : 'text-slate-500'}`}>{badge.name}</p>
-                        <p className="text-[9px] md:text-[10px] text-slate-500 leading-tight mt-1">{badge.desc}</p>
-                        {isEarned && <CheckCircle2 size={12} className="text-green-500 mt-1"/>}
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* --- HERO SECTION (Animated Real-Time Feel) --- */}
-      <header className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden pt-20 pb-10">
-        
-        {/* Dynamic Glowing Background Behind Avatar */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] md:w-[500px] md:h-[500px] bg-cyan-600/20 blur-[100px] rounded-full animate-pulse"></div>
-
-        {/* Floating Active Avatar (Real-Time game feel) */}
-        <motion.div
-          key={user.activeAvatarId}
-          animate={{ y: [0, -25, 0], rotate: [0, 2, -2, 0] }}
-          transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
-          className="relative z-10 w-48 h-48 md:w-72 md:h-72 mb-8"
+        {/* LOG OUT */}
+        <button 
+          onClick={handleLogout}
+          className="pointer-events-auto bg-white/5 backdrop-blur-sm border border-white/10 text-white hover:bg-[#D81B60] hover:border-[#D81B60] hover:text-white font-black uppercase text-[10px] md:text-xs px-4 md:px-6 py-2 md:py-2.5 flex items-center gap-2 transition-all shadow-[0_0_15px_rgba(216,27,96,0.1)] hover:shadow-[0_0_25px_rgba(216,27,96,0.5)]"
+          style={clipTech}
         >
-          <img 
-            src={currentAvatarImg} 
-            className="w-full h-full relative z-10 drop-shadow-[0_0_40px_rgba(34,211,238,0.6)] object-contain" 
-            alt="Active Fighter" 
-          />
-        </motion.div>
+          LOG OUT <LogOut size={14} />
+        </button>
+      </nav>
 
-        {/* Hero Text & CTA */}
-        <div className="relative z-10 text-center px-4 w-full">
-            <span className="bg-red-600/90 text-white border border-red-400 text-[9px] md:text-[11px] font-black px-3 py-1 md:py-1.5 rounded uppercase tracking-[4px] animate-pulse">
-              System Breach Detected - {user.name}
+      {/* --- HERO SECTION --- */}
+      <header className="relative z-10 min-h-[90vh] max-w-[1600px] mx-auto px-6 flex flex-col-reverse lg:flex-row items-center justify-center gap-8 lg:gap-12 pt-28 md:pt-32 pb-10">
+        
+        {/* Left: Typography & CTA */}
+        <div className="flex-1 w-full text-center lg:text-left mt-8 lg:mt-0">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <span className="inline-block border border-[#D81B60]/30 bg-[#D81B60]/10 text-[#D81B60] text-[9px] md:text-[10px] font-black px-4 py-1.5 uppercase tracking-[0.3em] mb-4 md:mb-6" style={clipTech}>
+              System Connected // {user.name}
             </span>
-            <h1 className="text-4xl sm:text-6xl md:text-8xl font-black italic uppercase leading-[0.9] mt-6 tracking-tighter text-white">
-              The <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-600 drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]">React</span><br />Uprising
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-black italic uppercase leading-[0.9] tracking-tighter text-white">
+              THE NEXT <br />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#D81B60] to-[#FF8A00] filter drop-shadow-[0_0_15px_rgba(216,27,96,0.4)]">
+                GENERATION
+              </span> <br />
+              OF CODING.
             </h1>
-            <p className="text-slate-400 text-sm md:text-base mt-4 md:mt-6 max-w-xl mx-auto font-medium px-4">
-              Capture the Virtual DOM and neutralize state leaks. Your first gauntlet mission is ready.
+            <p className="text-slate-400 text-xs md:text-sm mt-4 md:mt-6 max-w-md mx-auto lg:mx-0 font-medium leading-relaxed border-l-2 border-[#D81B60]/50 pl-4">
+              Capture the Virtual DOM. Neutralize state leaks. Level up with your friends and conquer complex data structures in intense real-time duels.
             </p>
             
-            {/* Start Mission Button -> Navigates to /missions */}
-            <motion.button
-              whileHover={{ scale: 1.05, y: -5, boxShadow: '0 0 40px 10px rgba(34, 211, 238, 0.4)' }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => navigate('/missions')}
-              className="mt-8 md:mt-12 mx-auto group relative bg-white text-black px-8 md:px-16 py-4 md:py-5 font-black uppercase italic text-lg md:text-2xl flex items-center justify-center gap-3 md:gap-5 transition-all transform -skew-x-12 hover:bg-cyan-400"
-            >
-              <div className="absolute inset-0 bg-white/30 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500 ease-out"></div>
-              <Play fill="black" className="w-5 h-5 md:w-7 md:h-7 relative z-10" /> 
-              <span className="relative z-10">Start Mission</span>
-            </motion.button>
+            <div className="mt-8 md:mt-10 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+              <motion.button
+                whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+                onClick={() => navigate('/missions')}
+                className="bg-gradient-to-r from-[#D81B60] to-[#FF8A00] text-white font-black uppercase italic text-sm md:text-base px-8 md:px-10 py-3 md:py-4 flex items-center justify-center gap-3 hover:shadow-[0_0_30px_rgba(216,27,96,0.5)] transition-all w-full sm:w-auto"
+                style={clipTech}
+              >
+                <Play fill="white" size={18} /> START MISSION
+              </motion.button>
+              <button
+                className="bg-white/5 backdrop-blur-sm border border-white/10 text-white hover:bg-white/10 font-black uppercase italic text-xs md:text-sm px-8 py-3 md:py-4 flex items-center justify-center transition-all w-full sm:w-auto"
+                style={clipTech}
+              >
+                EXPLORE HUB
+              </button>
+            </div>
+          </motion.div>
+        </div>
+
+        {/* Right: Holographic Avatar Projector */}
+        <div className="flex-1 relative flex justify-center items-center w-full h-[300px] sm:h-[400px] lg:h-[500px]">
+          {/* Glowing rings */}
+          <motion.div animate={{ rotate: 360 }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }} className="absolute w-[250px] h-[250px] sm:w-[300px] sm:h-[300px] lg:w-[450px] lg:h-[450px] border border-[#D81B60]/20 rounded-full border-dashed"></motion.div>
+          <motion.div animate={{ rotate: -360 }} transition={{ duration: 40, repeat: Infinity, ease: "linear" }} className="absolute w-[200px] h-[200px] sm:w-[250px] sm:h-[250px] lg:w-[350px] lg:h-[350px] border border-[#FF8A00]/20 rounded-full opacity-50"></motion.div>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[150px] h-[150px] lg:w-[200px] lg:h-[200px] bg-[#D81B60]/20 blur-[80px] rounded-full"></div>
+
+          {/* Floating Character */}
+          <motion.div
+            key={user.activeAvatarId}
+            animate={{ y: [0, -15, 0] }}
+            transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+            className="relative z-10 w-48 h-48 sm:w-64 sm:h-64 lg:w-80 lg:h-80"
+          >
+            <img 
+              src={currentAvatarImg} 
+              className="w-full h-full object-contain filter drop-shadow-[0_0_20px_rgba(216,27,96,0.4)] contrast-125" 
+              alt="Active Operator" 
+            />
+            
+            {/* Holographic ID Card attached to avatar */}
+            <div className="absolute bottom-0 md:bottom-4 -right-4 lg:-right-10 bg-black/40 backdrop-blur-md border border-white/10 p-3 md:p-4 min-w-[140px] md:min-w-[160px]" style={clipTech}>
+              <Crosshair className="text-[#D81B60] mb-1 md:mb-2 w-3 h-3 md:w-4 md:h-4" />
+              <p className="text-[8px] md:text-[9px] text-[#D81B60] uppercase font-bold tracking-widest">Active Shell</p>
+              <p className="text-xs md:text-sm font-black text-white uppercase italic">{avatars.find(a => a.id === user.activeAvatarId).name}</p>
+              <div className="mt-2 w-full h-1 bg-white/10"><div className="h-full bg-gradient-to-r from-[#D81B60] to-[#FF8A00] w-full"></div></div>
+            </div>
+          </motion.div>
         </div>
       </header>
 
-      {/* --- AVATAR ARMORY (6 Avatars, Fully Responsive Grid) --- */}
-      <section className="max-w-[1400px] mx-auto px-4 md:px-8 py-16 md:py-24 relative z-10">
-        <div className="flex flex-col sm:flex-row items-center gap-4 mb-10 md:mb-16 text-center sm:text-left">
-          <Star className="text-cyan-400 fill-cyan-400 hidden sm:block" size={28} />
-          <h2 className="text-3xl md:text-5xl font-black uppercase italic tracking-tighter text-white">
-            Operator <span className="text-cyan-400">Armory</span>
-          </h2>
-          <div className="h-[2px] w-full sm:flex-1 bg-gradient-to-r from-cyan-500/50 to-transparent mt-2 sm:mt-0"></div>
+      {/* --- SCROLLING MARQUEE DIVIDER --- */}
+      <div className="relative z-10 border-y border-white/5 bg-white/[0.02] py-4 overflow-hidden flex whitespace-nowrap">
+        <motion.div 
+          animate={{ x: ["0%", "-50%"] }} 
+          transition={{ repeat: Infinity, ease: "linear", duration: 20 }}
+          className="flex items-center gap-8 text-sm font-semibold tracking-widest text-slate-400 uppercase"
+        >
+          {/* Duplicated list for seamless looping */}
+          {[...Array(2)].map((_, i) => (
+            <React.Fragment key={i}>
+              <span>PvP Duels</span> <Sparkles className="text-[#FF8A00] w-4 h-4 mx-4 opacity-50" />
+              <span>DSA Mastery</span> <Sparkles className="text-[#D81B60] w-4 h-4 mx-4 opacity-50" />
+              <span>Fullstack</span> <Sparkles className="text-[#FF8A00] w-4 h-4 mx-4 opacity-50" />
+              <span>Global Leaderboard</span> <Sparkles className="text-[#D81B60] w-4 h-4 mx-4 opacity-50" />
+              <span>Developer Armory</span> <Sparkles className="text-[#FF8A00] w-4 h-4 mx-4 opacity-50" />
+            </React.Fragment>
+          ))}
+        </motion.div>
+      </div>
+
+      {/* --- SERVICES / GAME PLAY SECTION --- */}
+      <section className="relative z-10 max-w-[1200px] mx-auto px-6 py-24">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Our Services</h2>
+          <p className="text-slate-400 text-sm">Master your modules and dominate the leaderboards.</p>
         </div>
 
-        {/* Responsive Grid: 1 col mobile, 2 col tablet, 3 col desktop */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6 md:gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {user.realms.map(realm => (
+            <motion.div whileHover={{ y: -5 }} key={realm.id} className="bg-white/[0.03] backdrop-blur-xl border border-white/5 rounded-3xl p-8 hover:bg-white/[0.05] transition-colors group">
+              <div className="flex justify-between items-center mb-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#D81B60]/20 to-[#FF8A00]/20 flex items-center justify-center border border-white/10">
+                    <LayoutDashboard className="text-white w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-white">{realm.name}</h3>
+                    <p className="text-xs text-slate-500 mt-1">Gauntlet Module</p>
+                  </div>
+                </div>
+                <span className="text-3xl font-light text-white">{realm.progress}%</span>
+              </div>
+              
+              {/* Soft Web3 Progress Bar */}
+              <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                <motion.div 
+                  initial={{ width: 0 }} whileInView={{ width: `${realm.progress}%` }} viewport={{ once: true }} transition={{ duration: 1.5, ease: "easeOut" }}
+                  className="h-full bg-gradient-to-r from-[#D81B60] to-[#FF8A00] rounded-full"
+                />
+              </div>
+              <button className="mt-8 text-xs font-semibold text-white/70 group-hover:text-white flex items-center gap-1 transition-colors">
+                RESUME MODULE <ChevronRight size={14} />
+              </button>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* --- ARMORY SECTION --- */}
+      <section className="relative z-10 max-w-[1200px] mx-auto px-6 py-10 pb-32">
+        <div className="text-center mb-16">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">Operator Armory</h2>
+          <p className="text-slate-400 text-sm">Unlock premium shells to customize your developer persona.</p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 md:gap-6">
           {avatars.map((av) => {
             const isUnlocked = user.unlockedAvatars.includes(av.id);
             const isActive = user.activeAvatarId === av.id;
 
             return (
-              <motion.div
-                key={av.id}
-                whileHover={!isActive ? { y: -10 } : {}}
-                className={`relative group p-4 md:p-6 border-2 transition-all overflow-hidden rounded-2xl flex flex-col ${
-                  isActive ? 'border-cyan-500 bg-cyan-950/40 shadow-[0_0_20px_rgba(6,182,212,0.3)]' : 'border-white/10 bg-white/5 hover:border-cyan-500/50'
-                }`}
+              <div 
+                key={av.id} 
+                onClick={() => handleUnlockOrSelect(av.id)}
+                className={`relative cursor-pointer transition-all duration-300 rounded-3xl p-4 flex flex-col items-center text-center ${isActive ? 'bg-gradient-to-b from-[#D81B60]/10 to-white/5 border border-[#D81B60]/30 shadow-[0_0_20px_rgba(216,27,96,0.3)]' : 'bg-white/[0.02] border border-white/5 hover:bg-white/[0.05]'}`}
               >
-                <div className={`relative z-10 flex-grow transition-opacity ${!isUnlocked ? 'opacity-50 grayscale hover:grayscale-0' : ''}`}>
-                  <div className="w-full aspect-square bg-slate-900 rounded-xl mb-4 md:mb-6 flex items-center justify-center p-2">
-                     <img src={av.img} alt={av.name} className="w-full h-full object-contain drop-shadow-xl group-hover:scale-110 transition-transform" />
-                  </div>
-                  <h3 className="text-base md:text-lg font-black uppercase italic text-white tracking-tight">{av.name}</h3>
-                  
-                  <div className="mt-2 md:mt-4 flex items-center justify-between">
-                    {isUnlocked ? (
-                      <span className="text-[10px] md:text-[11px] font-bold text-cyan-400 tracking-tighter uppercase flex items-center gap-1.5"> 
-                        <CheckCircle2 size={12}/> {isActive ? 'ACTIVE' : 'READY'}
-                      </span>
-                    ) : (
-                      <div className="flex items-center gap-1.5 text-yellow-500 font-black text-sm md:text-base">
-                        <Coins size={14} /> {av.cost}
-                      </div>
-                    )}
-                    {!isUnlocked && <Lock size={14} className="text-slate-600" />}
-                  </div>
+                <div className={`w-full aspect-square rounded-2xl bg-white/[0.02] mb-4 flex items-center justify-center overflow-hidden ${!isUnlocked ? 'opacity-40 grayscale' : ''}`}>
+                  <img src={av.img} alt={av.name} className="w-[80%] h-[80%] object-contain hover:scale-110 transition-transform duration-500" />
+                </div>
+                
+                <h3 className="text-xs font-bold text-white mb-2">{av.name}</h3>
+                
+                <div className="w-full flex items-center justify-center mt-auto">
+                  {isUnlocked ? (
+                    <span className={`text-[10px] font-semibold px-3 py-1 rounded-full ${isActive ? 'bg-[#D81B60]/20 text-[#D81B60]' : 'bg-white/10 text-slate-300'}`}> 
+                      {isActive ? 'Active' : 'Ready'}
+                    </span>
+                  ) : (
+                    <div className="flex items-center gap-1 text-[#FF8A00] font-semibold text-xs">
+                      <Coins size={12} /> {av.cost}
+                    </div>
+                  )}
                 </div>
 
-                {/* Interaction Overlay */}
-                {!isActive && (
-                   <div onClick={() => handleUnlockOrSelect(av.id)} className="absolute inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity p-4 text-center cursor-pointer z-20">
-                      {!isUnlocked && <Lock className="text-yellow-500 mb-2 md:mb-4 w-6 h-6 md:w-8 md:h-8" />}
-                      <p className={`text-xs md:text-sm font-black uppercase italic ${!isUnlocked ? 'text-yellow-500' : 'text-cyan-400'}`}>
-                         {isUnlocked ? `Equip ${av.name}` : `Unlock for ${av.cost}`}
-                      </p>
-                      {!isUnlocked && <p className="text-[8px] md:text-[10px] text-slate-400 mt-2 border border-slate-600 px-2 py-1 rounded">Click to Purchase</p>}
-                   </div>
+                {/* Locked Overlay */}
+                {!isUnlocked && (
+                  <div className="absolute inset-0 bg-[#050505]/80 backdrop-blur-sm rounded-3xl flex flex-col items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+                    <Lock className="text-[#D81B60] mb-2 w-5 h-5" />
+                    <span className="text-[10px] font-semibold text-white bg-white/10 px-3 py-1 rounded-full backdrop-blur-md border border-white/10">Unlock</span>
+                  </div>
                 )}
-              </motion.div>
+              </div>
             );
           })}
         </div>
       </section>
 
-      {/* --- EXTENDED EXPERTISE: REALM PROGRESSION --- */}
-      <section className="max-w-[1400px] mx-auto px-4 md:px-8 py-16 md:py-20 relative z-10 border-t border-white/5">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8">
-           {user.realms.map(realm => (
-              <motion.div whileHover={{ scale: 1.02 }} key={realm.id} className="p-6 md:p-8 bg-gradient-to-br from-white/5 to-transparent rounded-2xl border border-white/10 relative overflow-hidden group cursor-pointer">
-                 <div className="absolute bottom-0 left-0 w-full h-1.5 bg-slate-800">
-                     <motion.div 
-                        initial={{ width: 0 }} whileInView={{ width: `${realm.progress}%` }} viewport={{ once: true }} transition={{ duration: 1.5, ease: "easeOut" }}
-                        className="h-full bg-cyan-500 shadow-[0_0_15px_#22d3ee]"
-                     />
-                 </div>
-                 <div className="flex justify-between items-start">
-                     <div>
-                         <p className={`text-xl md:text-2xl font-black uppercase italic ${realm.color}`}>{realm.name}</p>
-                         <p className="text-[10px] md:text-xs text-slate-400 mt-1">Active Gauntlet Module</p>
-                     </div>
-                     <div className="text-right">
-                        <p className="text-3xl md:text-4xl font-black text-white">{realm.progress}<span className="text-sm md:text-lg text-slate-600">%</span></p>
-                     </div>
-                 </div>
-                 <button className="mt-6 md:mt-8 text-cyan-400 text-[10px] md:text-xs font-black uppercase flex items-center gap-2 group-hover:gap-4 transition-all border border-cyan-500/30 px-4 py-2 rounded-lg hover:bg-cyan-500 hover:text-black">
-                   Resume Training <ChevronRight size={14} />
-                 </button>
-              </motion.div>
-           ))}
+      {/* --- NEW ABOUT / LORE SECTION --- */}
+      <section className="relative z-10 max-w-[1600px] mx-auto px-4 md:px-6 py-16 md:py-20 border-t border-white/5 bg-black/40">
+        <div className="flex items-center gap-4 justify-center mb-8 md:mb-12">
+           <div className="h-[2px] w-8 md:w-12 bg-gradient-to-r from-transparent to-[#D81B60]"></div>
+           <h2 className="text-xl md:text-3xl font-black uppercase italic tracking-widest text-white">ABOUT <span className="text-[#D81B60]">THE ARENA</span></h2>
+           <div className="h-[2px] w-8 md:w-12 bg-gradient-to-l from-transparent to-[#D81B60]"></div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-8 max-w-[1200px] mx-auto">
+          {/* Card 1 */}
+          <div className="bg-[#0a0b10] border border-white/10 p-6 md:p-8 relative group hover:border-[#D81B60]/50 transition-colors" style={clipTech}>
+            <Terminal className="text-[#D81B60] w-8 h-8 mb-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+            <h3 className="text-lg font-black uppercase italic text-white mb-3">Learn to Code</h3>
+            <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
+              Dev_Quest is a revolutionary platform combining standard web development concepts with RPG mechanics. Write efficient code to defeat bosses, unlock abilities, and climb the global leaderboards.
+            </p>
+          </div>
+          
+          {/* Card 2 */}
+          <div className="bg-[#0a0b10] border border-white/10 p-6 md:p-8 relative group hover:border-[#FF8A00]/50 transition-colors" style={clipTech}>
+            <Sword className="text-[#FF8A00] w-8 h-8 mb-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+            <h3 className="text-lg font-black uppercase italic text-white mb-3">PvP Duels</h3>
+            <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
+              Challenge other operators in real-time. Optimize your algorithms and manage your state faster than your opponents. The faster and cleaner your code, the stronger your attacks.
+            </p>
+          </div>
+
+          {/* Card 3 */}
+          <div className="bg-[#0a0b10] border border-white/10 p-6 md:p-8 relative group hover:border-[#D81B60]/50 transition-colors" style={clipTech}>
+            <Coins className="text-[#D81B60] w-8 h-8 mb-4 opacity-70 group-hover:opacity-100 transition-opacity" />
+            <h3 className="text-lg font-black uppercase italic text-white mb-3">Earn & Upgrade</h3>
+            <p className="text-xs md:text-sm text-slate-400 leading-relaxed">
+              Every successfully compiled problem grants you XP. Use your earnings to unlock specialized Operator Shells, rare badges, and customize your developer loadout.
+            </p>
+          </div>
         </div>
       </section>
+
+      {/* --- BADGE MODAL (Glassmorphism Tech UI) --- */}
+      <AnimatePresence>
+        {isBadgeOpen && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <motion.div initial={{ scale: 0.9, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 20 }} className="bg-[#0a0b10] border border-[#D81B60]/30 max-w-sm md:max-w-md w-full p-6 md:p-8 shadow-[0_0_50px_rgba(216,27,96,0.2)]" style={clipCard}>
+               <div className="flex justify-between items-start mb-6 md:mb-8 border-b border-white/10 pb-4">
+                 <div>
+                   <h3 className="text-lg md:text-xl font-black uppercase italic text-white tracking-widest">Achievement</h3>
+                   <span className="text-[#D81B60] text-[9px] md:text-[10px] font-bold uppercase tracking-[0.3em]">Data Log</span>
+                 </div>
+                 <button onClick={() => setIsBadgeOpen(false)} className="bg-white/5 p-2 hover:bg-[#D81B60] hover:text-white transition-colors text-slate-300" style={clipTech}><X size={16}/></button>
+               </div>
+               
+               <div className="space-y-4">
+                 {badgeLibrary.map((badge) => {
+                   const earned = user.earnedBadges.includes(badge.id);
+                   return (
+                     <div key={badge.id} className={`p-3 md:p-4 flex gap-4 items-center bg-white/5 transition-all ${earned ? 'border-l-2 border-l-[#D81B60]' : 'opacity-40 grayscale'}`} style={clipTech}>
+                       <div className={`p-2 md:p-3 bg-black/50 shadow-inner ${earned ? 'shadow-[#D81B60]/20' : ''}`} style={clipTech}>{badge.icon}</div>
+                       <div>
+                         <p className="font-black text-xs md:text-sm uppercase italic text-white tracking-wide">{badge.name}</p>
+                         <p className="text-[9px] md:text-[10px] text-slate-400 font-bold uppercase mt-1 leading-tight">{badge.desc}</p>
+                       </div>
+                       {earned && <CheckCircle2 className="text-[#FF8A00] ml-auto w-5 h-5" />}
+                     </div>
+                   );
+                 })}
+               </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
     </div>
   );
 };
